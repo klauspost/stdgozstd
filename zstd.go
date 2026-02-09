@@ -1,0 +1,82 @@
+// Copyright 2026 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package zstd implements the zstandard/rfc 8878 compression algorithm.
+package zstd
+
+import (
+	"errors"
+	"fmt"
+	"math"
+
+	"github.com/klauspost/stdgozstd/internal/le"
+)
+
+// ErrCorrupted indicates that the input data is not valid zstd.
+// Use errors.Is(err, &ErrCorrupted{}) to test for any corruption error.
+type ErrCorrupted struct {
+	msg string
+	err error
+}
+
+func (e *ErrCorrupted) Error() string {
+	if e.err != nil {
+		if e.msg != "" {
+			return e.msg + ": " + e.err.Error()
+		}
+		return e.err.Error()
+	}
+	return e.msg
+}
+
+func (e *ErrCorrupted) Is(target error) bool {
+	_, ok := target.(*ErrCorrupted)
+	return ok
+}
+
+func (e *ErrCorrupted) Unwrap() error { return e.err }
+
+func corruptedError(msg string) *ErrCorrupted {
+	return &ErrCorrupted{msg: msg}
+}
+
+func corruptedErrorf(format string, args ...any) *ErrCorrupted {
+	return &ErrCorrupted{msg: fmt.Sprintf(format, args...)}
+}
+
+const zstdMinMatch = 3
+const fcsUnknown = math.MaxUint64
+
+// Parent zstd uses 30; fillBase in fse_predefined.go expects this.
+const maxOffsetBits = 30
+
+// Errors returned by the zstd encoder and decoder.
+var (
+	ErrWindowSizeExceeded = errors.New("window size exceeded")
+	ErrUnknownDictionary  = errors.New("unknown dictionary")
+	ErrDecoderClosed      = errors.New("decoder used after Close")
+	ErrEncoderClosed      = errors.New("encoder used after Close")
+	ErrDecoderNilInput    = errors.New("nil input provided as reader")
+)
+
+var (
+	errReservedBlockType    = corruptedError("reserved block type")
+	errCompressedSizeTooBig = corruptedError("compressed size too big")
+	errBlockTooSmall        = corruptedError("block too small")
+	errUnexpectedBlockSize  = corruptedError("unexpected block size")
+	errMagicMismatch        = corruptedError("magic number mismatch")
+	errWindowSizeTooSmall   = corruptedError("window size too small")
+	errFrameSizeMismatch    = corruptedError("frame size does not match")
+	errCRCMismatch          = corruptedError("CRC check failed")
+)
+
+// load3232 loads a uint32 from b at int32 index.
+func load3232(b []byte, i int32) uint32 {
+	return le.Load32(b, i)
+}
+
+// load6432 loads a uint64 from b at int32 index.
+func load6432(b []byte, i int32) uint64 {
+	return le.Load64(b, i)
+}
