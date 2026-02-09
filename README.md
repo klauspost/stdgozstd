@@ -49,8 +49,8 @@ Supporting `io.WriterTo` and `io.ReaderFrom` on `Writer` and `Reader`:
 
 Bytes interface:
 
-* Added `(*Writer) AppendTo(dst, src []byte) []byte`
-* Added `(*Reader).DecodeBytes(dst, src []byte) ([]byte, error)`
+* Added `(*Writer).AppendCompress(dst, src []byte) []byte`
+* Added `(*Reader).AppendDecompress(dst, src []byte) ([]byte, error)`
 
 # Pre-PR
 
@@ -64,3 +64,4 @@ This will not be part of the code submitted to the Go repo.
 
 
 I haven't done detailed benchmarking yet, outside that it looks reasonable compared to the upstream implementations.
+
