@@ -407,7 +407,7 @@ func TestParsedDictMultiBlock(t *testing.T) {
 	}
 }
 
-func TestParsedDictDecodeBytes(t *testing.T) {
+func TestParsedDictAppendCompress(t *testing.T) {
 	raw := loadTestDict(t)
 	d, err := ParseDict(raw)
 	if err != nil {

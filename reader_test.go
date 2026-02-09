@@ -864,7 +864,7 @@ func TestReaderReuseAfterCloseWriteTo(t *testing.T) {
 	}
 }
 
-func TestReaderReuseAfterCloseDecodeBytes(t *testing.T) {
+func TestReaderReuseAfterCloseAppendCompress(t *testing.T) {
 	frame1 := buildRawFrame([]byte("before"))
 	frame2 := buildRawFrame([]byte("after"))
 
@@ -997,7 +997,7 @@ func TestZeroValueReader(t *testing.T) {
 	r.Close()
 }
 
-func TestZeroValueReaderDecodeBytes(t *testing.T) {
+func TestZeroValueReaderAppendCompress(t *testing.T) {
 	frame := buildRawFrame([]byte("decode zero"))
 	var r Reader
 	got, err := r.AppendDecompress(nil, frame)

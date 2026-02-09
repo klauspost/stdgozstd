@@ -44,6 +44,8 @@ func FuzzNewReader(f *testing.F) {
 	// Seed with valid compressed data.
 	w := NewWriter(nil)
 	f.Add(w.AppendCompress(nil, []byte("test")))
+	f.Add(w.AppendCompress(nil, []byte("testtesttesttesttesttesttesttest")))
+	f.Add(w.AppendCompress(nil, bytes.Repeat([]byte{0}, 100000)))
 	f.Add(w.AppendCompress(nil, []byte{}))
 	f.Add([]byte{0x28, 0xb5, 0x2f, 0xfd}) // just magic
 
@@ -59,6 +61,9 @@ func FuzzNewReader(f *testing.F) {
 
 func FuzzStreamRoundTrip(f *testing.F) {
 	f.Add([]byte{3, 0}, []byte("hello world"))
+	f.Add([]byte{3, 0}, bytes.Repeat([]byte("hello world"), 1000))
+	f.Add([]byte{3, 1}, bytes.Repeat([]byte("hello world"), 10000))
+	f.Add([]byte{23, 0}, bytes.Repeat([]byte("a"), 10000))
 	f.Add([]byte{0, 0}, []byte{})
 	f.Add([]byte{9, 5}, bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add([]byte{0x85, 0xff}, make([]byte, 65536))
@@ -101,7 +106,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 	})
 }
 
-func FuzzDecodeBytes(f *testing.F) {
+func FuzzAppendDecompress(f *testing.F) {
 	w := NewWriter(nil)
 	f.Add(w.AppendCompress(nil, []byte("test data")))
 	f.Add(w.AppendCompress(nil, bytes.Repeat([]byte{0}, 10000)))
@@ -117,6 +122,7 @@ func FuzzDecodeBytes(f *testing.F) {
 func FuzzDictRoundTrip(f *testing.F) {
 	f.Add([]byte{3, 10}, bytes.Repeat([]byte("the quick brown fox "), 50))
 	f.Add([]byte{0, 0}, []byte("small"))
+	f.Add([]byte{0, 0}, []byte("smallsmallsmallsmallsmall"))
 	w := NewWriter(nil)
 	r, _ := NewReader(bytes.NewReader(nil))
 

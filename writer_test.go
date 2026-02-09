@@ -261,7 +261,7 @@ func TestWriterSetLevel(t *testing.T) {
 	}
 }
 
-func TestWriterAppendTo(t *testing.T) {
+func TestWriterAppendCompress(t *testing.T) {
 	src := bytes.Repeat([]byte("encode all test data! "), 500)
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
@@ -276,11 +276,11 @@ func TestWriterAppendTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, src) {
-		t.Fatal("AppendTo round-trip mismatch")
+		t.Fatal("AppendCompress round-trip mismatch")
 	}
 }
 
-func TestWriterAppendToMultiBlock(t *testing.T) {
+func TestWriterAppendCompressMultiBlock(t *testing.T) {
 	src := make([]byte, maxCompressedBlockSize*2+1000)
 	for i := range src {
 		src[i] = byte(i % 200)
@@ -298,7 +298,7 @@ func TestWriterAppendToMultiBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, src) {
-		t.Fatal("AppendTo multi-block round-trip mismatch")
+		t.Fatal("AppendCompress multi-block round-trip mismatch")
 	}
 }
 
@@ -570,8 +570,8 @@ func TestAllLevelsOneByte(t *testing.T) {
 	}
 }
 
-func TestAppendToAllLevels(t *testing.T) {
-	src := bytes.Repeat([]byte("AppendTo test data across levels! "), 500)
+func TestAppendCompressAllLevels(t *testing.T) {
+	src := bytes.Repeat([]byte("AppendCompress test data across levels! "), 500)
 	for level := 1; level <= BestCompression; level++ {
 		t.Run("", func(t *testing.T) {
 			w := NewWriter(nil)
@@ -589,7 +589,7 @@ func TestAppendToAllLevels(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !bytes.Equal(got, src) {
-				t.Fatalf("AppendTo mismatch at level %d", level)
+				t.Fatalf("AppendCompress mismatch at level %d", level)
 			}
 		})
 	}
