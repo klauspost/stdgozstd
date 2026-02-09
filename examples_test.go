@@ -32,7 +32,7 @@ func Example_writerReader() {
 	// Hello, zstd!
 }
 
-func ExampleWriter_AppendTo() {
+func ExampleWriter_AppendCompress() {
 	src := []byte("One-shot compression is the simplest API.")
 
 	w := NewWriter(nil)
@@ -43,7 +43,7 @@ func ExampleWriter_AppendTo() {
 		log.Fatal(err)
 	}
 	defer r.Close()
-	decompressed, err := r.DecodeBytes(nil, compressed)
+	decompressed, err := r.AppendDecompress(nil, compressed)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func ExampleWriter_AppendTo() {
 	// One-shot compression is the simplest API.
 }
 
-func ExampleReader_DecodeBytes() {
+func ExampleReader_AppendDecompress() {
 	src := []byte("appended to existing buffer")
 
 	w := NewWriter(nil)

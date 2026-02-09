@@ -91,7 +91,7 @@ func BenchmarkStreamEncode(b *testing.B) {
 	}
 }
 
-func BenchmarkDecodeBytes(b *testing.B) {
+func BenchmarkAppendDecompress(b *testing.B) {
 	datasets := benchDatasets(b)
 	levels := []int{1, 3, 5, 8}
 
@@ -109,7 +109,7 @@ func BenchmarkDecodeBytes(b *testing.B) {
 				b.SetBytes(int64(len(data)))
 				b.ResetTimer()
 				for range b.N {
-					r.DecodeBytes(buf[:0], compressed)
+					r.AppendDecompress(buf[:0], compressed)
 				}
 			})
 			b.Run(fmt.Sprintf("ref/level-%d/%s", level, name), func(b *testing.B) {
