@@ -10,6 +10,8 @@ but rewritten for the interface of outlined in the issue above.
 Performance is somewhere in the area of 5-10% slower than the upstream Go implementations.
 Mainly due to code simplification for easier maintainability.
 
+Browse documentation: [![Go Reference](https://pkg.go.dev/badge/github.com/klauspost/stdgozstd.svg)](https://pkg.go.dev/github.com/klauspost/stdgozstd)
+
 ## Notable differences to upstream:
 
 * Fully single-threaded.
@@ -59,5 +61,6 @@ This would then be the regression tests for the implementation.
 
 `_testref` is sanify checks that crosschecks with [github.com/klauspost/compress/zstd](https://github.com/klauspost/compress/tree/master/zstd).
 This will not be part of the code submitted to the Go repo.
+
 
 I haven't done detailed benchmarking yet, outside that it looks reasonable compared to the upstream implementations.
