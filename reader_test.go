@@ -10,6 +10,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/klauspost/stdgozstd/internal/xxhash"
@@ -1008,4 +1009,39 @@ func TestZeroValueReaderAppendCompress(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, "decode zero")
 	}
 	r.Close()
+}
+
+func TestAppendDecompressConcurrent(t *testing.T) {
+	src := bytes.Repeat([]byte("concurrent decompress test data! "), 500)
+	w := NewWriter(nil)
+	compressed := w.AppendCompress(nil, src)
+
+	r, err := NewReader(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines)
+
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			got, err := r.AppendDecompress(nil, compressed)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !bytes.Equal(got, src) {
+				errs <- bytes.ErrTooLarge
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
 }

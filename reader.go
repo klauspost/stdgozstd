@@ -4,14 +4,22 @@
 
 package zstd
 
-import "io"
+import (
+	"io"
+	"sync"
+)
 
 var _ io.WriterTo = (*Reader)(nil)
 
+var (
+	frameDecPool sync.Pool
+	blockDecPool sync.Pool
+)
+
 // Reader decompresses a zstd-compressed stream.
 type Reader struct {
-	frame frameDec
-	block blockDec
+	frame *frameDec
+	block *blockDec
 	rw    readerWrapper
 
 	buf          []byte
@@ -22,17 +30,29 @@ type Reader struct {
 	initialized  bool
 }
 
+var defaultDecoderOptions = decoderOptions{
+	maxWindowSize: 128 << 20,
+	lowMem:        true,
+}
+
 func (z *Reader) ensureInit() {
 	if z.initialized {
 		return
 	}
 	z.initialized = true
 	initPredefined()
-	z.frame = *newFrameDec(decoderOptions{
-		maxWindowSize: 128 << 20,
-		lowMem:        true,
-	})
-	z.block = blockDec{lowMem: true}
+	if frame, _ := frameDecPool.Get().(*frameDec); frame != nil {
+		frame.o = defaultDecoderOptions
+		z.frame = frame
+	} else {
+		z.frame = newFrameDec(defaultDecoderOptions)
+	}
+	if block, _ := blockDecPool.Get().(*blockDec); block != nil {
+		block.lowMem = true
+		z.block = block
+	} else {
+		z.block = &blockDec{lowMem: true}
+	}
 }
 
 // NewReader creates a new Reader reading from r.
@@ -117,7 +137,7 @@ func (z *Reader) Read(p []byte) (int, error) {
 		z.frame.history.ensureBlock()
 		prevLen := len(z.frame.history.b)
 
-		if err := z.frame.next(&z.block); err != nil {
+		if err := z.frame.next(z.block); err != nil {
 			z.err = err
 			return written, err
 		}
@@ -169,35 +189,56 @@ func (z *Reader) Read(p []byte) (int, error) {
 //	result, err := r.AppendDecompress(existingPrefix, compressed)
 //
 // Any registered dictionaries (via AddDict or SetRawDict) apply.
+//
+// AppendDecompress is safe for concurrent use on the same Reader,
+// provided configuration methods are not called concurrently.
 func (z *Reader) AppendDecompress(dst, src []byte) ([]byte, error) {
 	z.ensureInit()
 	if z.err == ErrDecoderClosed {
 		return nil, ErrDecoderClosed
 	}
-	z.frame.bBuf = byteBuf(src)
+
+	frame, _ := frameDecPool.Get().(*frameDec)
+	if frame == nil {
+		frame = newFrameDec(z.frame.o)
+	} else {
+		frame.o = z.frame.o
+	}
+	block, _ := blockDecPool.Get().(*blockDec)
+	if block == nil {
+		block = &blockDec{lowMem: z.frame.o.lowMem}
+	} else {
+		block.lowMem = z.frame.o.lowMem
+	}
+	defer func() {
+		frameDecPool.Put(frame)
+		blockDecPool.Put(block)
+	}()
+
+	frame.bBuf = byteBuf(src)
 	for {
-		err := z.frame.reset(&z.frame.bBuf)
+		err := frame.reset(&frame.bBuf)
 		if err == io.EOF {
 			return dst, nil
 		}
 		if err != nil {
 			return dst, err
 		}
-		z.frame.history.reset()
+		frame.history.reset()
 
-		if z.frame.DictionaryID != 0 {
-			d, ok := z.dicts[z.frame.DictionaryID]
+		if frame.DictionaryID != 0 {
+			d, ok := z.dicts[frame.DictionaryID]
 			if !ok {
 				return dst, ErrUnknownDictionary
 			}
-			z.frame.history.setDict(d)
+			frame.history.setDict(d)
 		} else if d, ok := z.dicts[0]; ok {
-			z.frame.history.dict = d
-			z.frame.history.decoders.dict = d.content
+			frame.history.dict = d
+			frame.history.decoders.dict = d.content
 		}
 
 		var err2 error
-		dst, err2 = z.frame.runDecoder(dst, &z.block)
+		dst, err2 = frame.runDecoder(dst, block)
 		if err2 != nil {
 			return dst, err2
 		}
@@ -210,8 +251,12 @@ func (z *Reader) Close() error {
 	z.ensureInit()
 	z.err = ErrDecoderClosed
 	z.buf = nil
-	z.frame.history.freeHuffDecoder()
-	z.frame.history.decoders.freeDecoders()
+	z.frame.history.reset()
+	frameDecPool.Put(z.frame)
+	z.frame = nil
+	blockDecPool.Put(z.block)
+	z.block = nil
+	z.initialized = false
 	return nil
 }
 
@@ -300,7 +345,7 @@ func (z *Reader) WriteTo(w io.Writer) (int64, error) {
 		z.frame.history.ensureBlock()
 		prevLen := len(z.frame.history.b)
 
-		if err := z.frame.next(&z.block); err != nil {
+		if err := z.frame.next(z.block); err != nil {
 			z.err = err
 			return written, err
 		}
