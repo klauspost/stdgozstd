@@ -19,6 +19,13 @@ func FuzzRefEncoderCompat(f *testing.F) {
 	f.Add(testData(4096), 8)
 	f.Add(make([]byte, 100), 0)
 
+	w := zstd.NewWriter(nil)
+	dec, err := ref.NewReader(nil)
+	if err != nil {
+		f.Fatal(err)
+	}
+	defer dec.Close()
+
 	f.Fuzz(func(t *testing.T, data []byte, level int) {
 		if level < 0 {
 			level = -level
@@ -27,8 +34,12 @@ func FuzzRefEncoderCompat(f *testing.F) {
 		if len(data) == 0 || len(data) > 1<<20 {
 			return
 		}
-		compressed := liteEncode(t, data, level)
-		got := refDecode(t, compressed)
+		_ = w.SetLevel(level)
+		compressed := w.AppendCompress(nil, data)
+		got, err := dec.DecodeAll(compressed, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !bytes.Equal(data, got) {
 			t.Errorf("roundtrip mismatch at level %d, len=%d", level, len(data))
 		}
@@ -40,21 +51,38 @@ func FuzzRefDecoderCompat(f *testing.F) {
 	f.Add(testData(1024), 1)
 	f.Add(testData(4096), 3)
 
+	levels := []ref.EncoderLevel{ref.SpeedFastest, ref.SpeedDefault, ref.SpeedBetterCompression, ref.SpeedBestCompression}
+	encs := make([]*ref.Encoder, len(levels))
+	for i, l := range levels {
+		enc, err := ref.NewWriter(nil, ref.WithEncoderLevel(l))
+		if err != nil {
+			f.Fatal(err)
+		}
+		encs[i] = enc
+	}
+	liteDec, err := zstd.NewReader(nil)
+	if err != nil {
+		f.Fatal(err)
+	}
+
 	f.Fuzz(func(t *testing.T, data []byte, levelHint int) {
-		levels := []ref.EncoderLevel{ref.SpeedFastest, ref.SpeedDefault, ref.SpeedBetterCompression, ref.SpeedBestCompression}
 		if levelHint < 0 {
 			levelHint = -levelHint
 		}
-		rl := levels[levelHint%len(levels)]
+		enc := encs[levelHint%len(encs)]
 
 		if len(data) == 0 || len(data) > 1<<20 {
 			return
 		}
 
-		compressed := refEncode(t, data, ref.WithEncoderLevel(rl))
-		got := liteDecode(t, compressed)
+		compressed := enc.EncodeAll(data, nil)
+		_ = liteDec.Reset(bytes.NewReader(nil))
+		got, err := liteDec.AppendDecompress(nil, compressed)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !bytes.Equal(data, got) {
-			t.Errorf("roundtrip mismatch at ref level %v, len=%d", rl, len(data))
+			t.Errorf("roundtrip mismatch at ref level %v, len=%d", levels[levelHint%len(levels)], len(data))
 		}
 	})
 }
@@ -73,6 +101,12 @@ func FuzzRefBothDecoders(f *testing.F) {
 	}
 	defer refDec.Close()
 
+	liteDec, err := zstd.NewReader(bytes.NewReader(nil))
+	if err != nil {
+		f.Fatal(err)
+	}
+	liteDec.SetMaxWindowSize(maxWindow)
+
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) > 1<<16 {
 			return
@@ -80,13 +114,8 @@ func FuzzRefBothDecoders(f *testing.F) {
 
 		refResult, refErr := refDec.DecodeAll(data, nil)
 
-		r, liteErr := zstd.NewReader(bytes.NewReader(data))
-		var liteResult []byte
-		if liteErr == nil {
-			r.SetMaxWindowSize(maxWindow)
-			liteResult, liteErr = io.ReadAll(r)
-			r.Close()
-		}
+		_ = liteDec.Reset(bytes.NewReader(data))
+		liteResult, liteErr := io.ReadAll(liteDec)
 
 		if refErr == nil && liteErr != nil {
 			t.Errorf("parent decoded OK but lite failed: %v", liteErr)
@@ -101,6 +130,8 @@ func FuzzRefDictCompat(f *testing.F) {
 	f.Add(testData(256), testData(128))
 	f.Add(testData(1024), testData(512))
 
+	w := zstd.NewWriter(nil)
+
 	f.Fuzz(func(t *testing.T, dictData, payload []byte) {
 		if len(dictData) == 0 || len(payload) == 0 {
 			return
@@ -112,7 +143,6 @@ func FuzzRefDictCompat(f *testing.F) {
 			payload = payload[:8192]
 		}
 
-		w := zstd.NewWriter(nil)
 		w.SetRawDict(dictData)
 		compressed := w.AppendCompress(nil, payload)
 
