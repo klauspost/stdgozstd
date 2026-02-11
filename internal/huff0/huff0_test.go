@@ -112,7 +112,7 @@ func TestScratchReuse(t *testing.T) {
 	rng := rand.New(rand.NewSource(3))
 	// Force no reuse so each output includes the table.
 	s := &Scratch{Reuse: ReusePolicyNone}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		input := make([]byte, 1024+i*512)
 		for j := range input {
 			input[j] = byte(rng.Intn(32))

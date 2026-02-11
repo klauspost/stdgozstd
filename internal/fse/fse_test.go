@@ -61,7 +61,7 @@ func TestCompressRandom(t *testing.T) {
 
 func TestCompressScratchReuse(t *testing.T) {
 	s := &Scratch{}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		input := bytes.Repeat([]byte("hello world test data for fse"), 50+i*10)
 		out, err := Compress(input, s)
 		if err != nil {

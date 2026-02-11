@@ -83,7 +83,7 @@ func TestZeroLengthWrite(t *testing.T) {
 
 func TestMultipleResets(t *testing.T) {
 	d := New()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		_, _ = d.Write([]byte("hello"))
 		d.Reset()
 	}
