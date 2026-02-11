@@ -57,7 +57,6 @@ var (
 	ErrUnknownDictionary  = errors.New("unknown dictionary")
 	ErrDecoderClosed      = errors.New("decoder used after Close")
 	ErrEncoderClosed      = errors.New("encoder used after Close")
-	ErrDecoderNilInput    = errors.New("nil input provided as reader")
 )
 
 var (
