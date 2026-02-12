@@ -664,10 +664,7 @@ func (w *errWriter) Write(p []byte) (int, error) {
 	if w.n <= 0 {
 		return 0, w.err
 	}
-	n := len(p)
-	if n > w.n {
-		n = w.n
-	}
+	n := min(len(p), w.n)
 	w.n -= n
 	return n, nil
 }
@@ -901,7 +898,7 @@ func TestReaderReuseAfterCloseMultiple(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		want := []byte{byte('A' + i), byte('0' + i)}
 		frame := buildRawFrame(want)
 

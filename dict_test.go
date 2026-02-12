@@ -252,7 +252,7 @@ func TestParseDictInvalidOffsets(t *testing.T) {
 	t.Run("zero", func(t *testing.T) {
 		b := append([]byte{}, raw...)
 		// Zero out all 3 offsets.
-		for i := 0; i < 12; i++ {
+		for i := range 12 {
 			b[offsetPos+i] = 0
 		}
 		_, err := ParseDict(b)

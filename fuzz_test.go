@@ -17,22 +17,27 @@ func FuzzRoundTrip(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add(make([]byte, 65536))
 	w := NewWriter(nil)
+	r, _ := NewReader(bytes.NewReader(nil))
+	var compressed []byte
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		w.Reset(nil)
 		if len(data) > 0 {
 			_ = w.SetLevel(int(data[0] % BestCompression))
 		}
-		compressed := w.AppendCompress(nil, data)
+		compressed = w.AppendCompress(compressed[:0], data)
 
-		r, err := NewReader(bytes.NewReader(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		_ = r.Reset(bytes.NewReader(compressed))
 		got, err := io.ReadAll(r)
-		_ = r.Close()
 		if err != nil {
 			t.Fatalf("decode: %v", err)
+		}
+		if !bytes.Equal(got, data) {
+			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(got), len(data))
+		}
+		got, err = r.AppendDecompress(got[:0], compressed)
+		if err != nil {
+			t.Fatalf("AppendDecompress: %v", err)
 		}
 		if !bytes.Equal(got, data) {
 			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(got), len(data))
@@ -48,14 +53,27 @@ func FuzzNewReader(f *testing.F) {
 	f.Add(w.AppendCompress(nil, bytes.Repeat([]byte{0}, 100000)))
 	f.Add(w.AppendCompress(nil, []byte{}))
 	f.Add([]byte{0x28, 0xb5, 0x2f, 0xfd}) // just magic
+	r, err := NewReader(nil)
+	if err != nil {
+		f.Fatal(err)
+	}
+	defer r.Close()
+	var dst []byte
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		r, err := NewReader(bytes.NewReader(data))
+		err = r.Reset(bytes.NewReader(data))
 		if err != nil {
-			return
+			t.Fatal(err)
 		}
-		_, _ = io.Copy(io.Discard, r)
-		_ = r.Close()
+		n, _ := io.Copy(io.Discard, io.Reader(r))
+		if n < 16<<20 {
+			dst, _ = r.AppendDecompress(dst[:0], data)
+		}
+		err = r.Reset(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = r.WriteTo(io.Discard)
 	})
 }
 
@@ -71,7 +89,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 	r, _ := NewReader(bytes.NewReader(nil))
 
 	f.Fuzz(func(t *testing.T, cfg, data []byte) {
-		if len(cfg) < 2 {
+		if len(cfg) != 2 {
 			return
 		}
 		level := int(cfg[0]&0x0f) % (BestCompression + 1)
@@ -103,19 +121,6 @@ func FuzzStreamRoundTrip(f *testing.F) {
 		if !bytes.Equal(got, data) {
 			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(got), len(data))
 		}
-	})
-}
-
-func FuzzAppendDecompress(f *testing.F) {
-	w := NewWriter(nil)
-	f.Add(w.AppendCompress(nil, []byte("test data")))
-	f.Add(w.AppendCompress(nil, bytes.Repeat([]byte{0}, 10000)))
-	f.Add([]byte{0x28, 0xb5, 0x2f, 0xfd, 0, 0, 0})
-	r, _ := NewReader(bytes.NewReader(nil))
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		_ = r.Reset(bytes.NewReader(nil))
-		_, _ = r.AppendDecompress(nil, data)
 	})
 }
 
@@ -195,6 +200,7 @@ func FuzzReaderReset(f *testing.F) {
 	f.Add(byte(9), bytes.Repeat([]byte("reset"), 500))
 	w := NewWriter(nil)
 	r, _ := NewReader(bytes.NewReader(nil))
+	var buf bytes.Buffer
 
 	f.Fuzz(func(t *testing.T, levelByte byte, data []byte) {
 		level := int(levelByte) % (BestCompression + 1)
@@ -222,6 +228,19 @@ func FuzzReaderReset(f *testing.F) {
 		}
 		if !bytes.Equal(got, data) {
 			t.Fatal("second read mismatch")
+		}
+
+		_ = r.Reset(bytes.NewReader(compressed2))
+		buf.Reset()
+		n, err := r.WriteTo(&buf)
+		if err != nil {
+			t.Fatalf("WriteTo read after Reset: %v", err)
+		}
+		if n != int64(buf.Len()) {
+			t.Fatalf("WriteTo read after Reset: got %d bytes, want %d", n, buf.Len())
+		}
+		if !bytes.Equal(buf.Bytes(), data) {
+			t.Fatal("WriteTo read mismatch")
 		}
 
 		_ = r.Reset(bytes.NewReader(nil))

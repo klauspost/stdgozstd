@@ -77,10 +77,7 @@ func (h *history) ensureBlock() {
 		}
 	}
 	// Grow lazily instead of allocating full allocFrameBuffer upfront.
-	newCap := max(cap(h.b)*2, maxCompressedBlockSize*2)
-	if newCap > h.allocFrameBuffer {
-		newCap = h.allocFrameBuffer
-	}
+	newCap := min(max(cap(h.b)*2, maxCompressedBlockSize*2), h.allocFrameBuffer)
 	if newCap < len(h.b)+maxCompressedBlockSize {
 		newCap = len(h.b) + maxCompressedBlockSize
 	}
