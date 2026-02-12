@@ -86,7 +86,7 @@ func TestRawDictRoundTripAllLevels(t *testing.T) {
 	}
 }
 
-func TestRawDictAppendTo(t *testing.T) {
+func TestRawDictRoundTrip(t *testing.T) {
 	dictContent := bytes.Repeat([]byte("encode-all dict prefix "), 80)
 	src := append([]byte{}, dictContent[200:800]...)
 	src = append(src, bytes.Repeat([]byte("extra payload "), 50)...)
@@ -98,7 +98,7 @@ func TestRawDictAppendTo(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.SetRawDict(dictContent)
-			compressed := w.AppendCompress(nil, src)
+			compressed := compressOneShot(t, w, src)
 
 			r, err := NewReader(bytes.NewReader(compressed))
 			if err != nil {
@@ -128,11 +128,11 @@ func TestRawDictImprovesCompression(t *testing.T) {
 	w := NewWriter(nil)
 
 	// Without dict.
-	noDictCompressed := w.AppendCompress(nil, src)
+	noDictCompressed := compressOneShot(t, w, src)
 
 	// With dict.
 	w.SetRawDict(dictContent)
-	withDictCompressed := w.AppendCompress(nil, src)
+	withDictCompressed := compressOneShot(t, w, src)
 
 	if len(withDictCompressed) > len(noDictCompressed) {
 		t.Fatalf("dict should help: with=%d, without=%d", len(withDictCompressed), len(noDictCompressed))
@@ -145,7 +145,7 @@ func TestNoDictDecodeWithDict(t *testing.T) {
 	dictContent := []byte("some dict content that is not used")
 
 	w := NewWriter(nil)
-	compressed := w.AppendCompress(nil, src)
+	compressed := compressOneShot(t, w, src)
 
 	r, err := NewReader(bytes.NewReader(compressed))
 	if err != nil {
@@ -324,7 +324,7 @@ func TestParsedDictRoundTrip(t *testing.T) {
 				t.Fatal(err)
 			}
 			w.AddDict(d)
-			compressed := w.AppendCompress(nil, src)
+			compressed := compressOneShot(t, w, src)
 
 			r, err := NewReader(bytes.NewReader(compressed))
 			if err != nil {
@@ -390,7 +390,7 @@ func TestParsedDictMultiBlock(t *testing.T) {
 
 	w := NewWriter(nil)
 	w.AddDict(d)
-	compressed := w.AppendCompress(nil, src)
+	compressed := compressOneShot(t, w, src)
 
 	r, err := NewReader(bytes.NewReader(compressed))
 	if err != nil {
@@ -398,33 +398,6 @@ func TestParsedDictMultiBlock(t *testing.T) {
 	}
 	r.AddDict(d)
 	got, err := io.ReadAll(r)
-	_ = r.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatalf("mismatch: got %d, want %d bytes", len(got), len(src))
-	}
-}
-
-func TestParsedDictAppendCompress(t *testing.T) {
-	raw := loadTestDict(t)
-	d, err := ParseDict(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := bytes.Repeat([]byte("decode-all parsed dict test "), 100)
-
-	w := NewWriter(nil)
-	w.AddDict(d)
-	compressed := w.AppendCompress(nil, src)
-
-	r, err := NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.AddDict(d)
-	got, err := r.AppendDecompress(nil, compressed)
 	_ = r.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -446,7 +419,7 @@ func TestDictIDMismatch(t *testing.T) {
 
 	w := NewWriter(nil)
 	w.AddDict(d)
-	compressed := w.AppendCompress(nil, src)
+	compressed := compressOneShot(t, w, src)
 
 	// Decode without dict registered → ErrUnknownDictionary.
 	r, err := NewReader(bytes.NewReader(compressed))
@@ -457,14 +430,6 @@ func TestDictIDMismatch(t *testing.T) {
 	_ = r.Close()
 	if err != ErrUnknownDictionary {
 		t.Fatalf("expected ErrUnknownDictionary, got: %v", err)
-	}
-
-	// Also test DecodeBytes path.
-	r2, _ := NewReader(bytes.NewReader(nil))
-	_, err = r2.AppendDecompress(nil, compressed)
-	_ = r2.Close()
-	if err != ErrUnknownDictionary {
-		t.Fatalf("DecodeBytes: expected ErrUnknownDictionary, got: %v", err)
 	}
 }
 
@@ -488,11 +453,11 @@ func TestDictIDFrameEncoding(t *testing.T) {
 
 			w := NewWriter(nil)
 			w.AddDict(d)
-			compressed := w.AppendCompress(nil, src)
+			compressed := compressOneShot(t, w, src)
 
-			r, _ := NewReader(bytes.NewReader(nil))
+			r, _ := NewReader(bytes.NewReader(compressed))
 			r.AddDict(d)
-			got, err := r.AppendDecompress(nil, compressed)
+			got, err := io.ReadAll(r)
 			_ = r.Close()
 			if err != nil {
 				t.Fatal(err)
@@ -527,19 +492,19 @@ func TestMultipleDictsRegistered(t *testing.T) {
 
 	wA := NewWriter(nil)
 	wA.AddDict(dA)
-	compA := wA.AppendCompress(nil, srcA)
+	compA := compressOneShot(t, wA, srcA)
 
 	wB := NewWriter(nil)
 	wB.AddDict(dB)
-	compB := wB.AppendCompress(nil, srcB)
+	compB := compressOneShot(t, wB, srcB)
 
 	// Concatenate two frames.
 	combined := append(compA, compB...)
 
-	r, _ := NewReader(bytes.NewReader(nil))
+	r, _ := NewReader(bytes.NewReader(combined))
 	r.AddDict(dA)
 	r.AddDict(dB)
-	got, err := r.AppendDecompress(nil, combined)
+	got, err := io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -575,10 +540,10 @@ func TestRawDictContentMatchReferences(t *testing.T) {
 
 	w := NewWriter(nil)
 
-	noDictCompressed := w.AppendCompress(nil, src)
+	noDictCompressed := compressOneShot(t, w, src)
 
 	w.SetRawDict(dictContent)
-	withDictCompressed := w.AppendCompress(nil, src)
+	withDictCompressed := compressOneShot(t, w, src)
 
 	if len(withDictCompressed) >= len(noDictCompressed) {
 		t.Fatalf("dict should shrink output: with=%d, without=%d", len(withDictCompressed), len(noDictCompressed))
@@ -608,7 +573,7 @@ func TestRawDictSmall(t *testing.T) {
 			dictContent := bytes.Repeat([]byte("x"), sz)
 			w := NewWriter(nil)
 			w.SetRawDict(dictContent)
-			compressed := w.AppendCompress(nil, src)
+			compressed := compressOneShot(t, w, src)
 
 			r, _ := NewReader(bytes.NewReader(compressed))
 			r.SetRawDict(dictContent)
@@ -638,7 +603,7 @@ func TestDictWriterReuseAcrossReset(t *testing.T) {
 		t.Run(frame.name, func(t *testing.T) {
 			w := NewWriter(nil)
 			w.SetRawDict(dictContent)
-			compressed := w.AppendCompress(nil, frame.src)
+			compressed := compressOneShot(t, w, frame.src)
 
 			r, _ := NewReader(bytes.NewReader(compressed))
 			r.SetRawDict(dictContent)
@@ -661,11 +626,10 @@ func TestDictReaderReuseAcrossReset(t *testing.T) {
 	src2 := append([]byte{}, dictContent[100:600]...)
 	src2 = append(src2, bytes.Repeat([]byte("reader frame 2 "), 50)...)
 
-	// Compress each frame with its own writer to avoid writer reuse issues.
 	compress := func(src []byte) []byte {
 		w := NewWriter(nil)
 		w.SetRawDict(dictContent)
-		return w.AppendCompress(nil, src)
+		return compressOneShot(t, w, src)
 	}
 	comp1 := compress(src1)
 	comp2 := compress(src2)

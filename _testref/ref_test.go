@@ -56,29 +56,59 @@ func refDecode(t testing.TB, compressed []byte, opts ...ref.DOption) []byte {
 	return got
 }
 
+func liteCompressOneShot(t testing.TB, w *zstd.Writer, src []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
 func liteEncode(t testing.TB, src []byte, level int) []byte {
 	t.Helper()
-	w := zstd.NewWriter(nil)
+	var buf bytes.Buffer
+	w := zstd.NewWriter(&buf)
 	if err := w.SetLevel(level); err != nil {
 		t.Fatal(err)
 	}
-	return w.AppendCompress(nil, src)
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 func liteEncodeOpts(t testing.TB, src []byte, setup func(*zstd.Writer)) []byte {
 	t.Helper()
-	w := zstd.NewWriter(nil)
+	var buf bytes.Buffer
+	w := zstd.NewWriter(&buf)
 	setup(w)
-	return w.AppendCompress(nil, src)
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 func liteDecode(t testing.TB, compressed []byte) []byte {
 	t.Helper()
-	r, err := zstd.NewReader(nil)
+	r, err := zstd.NewReader(bytes.NewReader(compressed))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := r.AppendDecompress(nil, compressed)
+	defer r.Close()
+	got, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}

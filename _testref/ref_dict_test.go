@@ -57,7 +57,7 @@ func TestRefDictMarshalRoundTrip(t *testing.T) {
 	src := testData(4096)
 	w := zstd.NewWriter(nil)
 	w.AddDict(liteDict)
-	compressed := w.AppendCompress(nil, src)
+	compressed := liteCompressOneShot(t, w, src)
 
 	r, err := zstd.NewReader(bytes.NewReader(compressed))
 	if err != nil {
@@ -82,7 +82,7 @@ func TestRefDictParsedLiteEncodeParentDecode(t *testing.T) {
 		w := zstd.NewWriter(nil)
 		w.SetLevel(level)
 		w.AddDict(liteDict)
-		compressed := w.AppendCompress(nil, src)
+		compressed := liteCompressOneShot(t, w, src)
 
 		got := refDecode(t, compressed, ref.WithDecoderDicts(raw))
 		if !bytes.Equal(src, got) {
@@ -122,7 +122,7 @@ func TestRefDictRawLiteEncodeParentDecode(t *testing.T) {
 		w := zstd.NewWriter(nil)
 		w.SetLevel(level)
 		w.SetRawDict(rawDict)
-		compressed := w.AppendCompress(nil, src)
+		compressed := liteCompressOneShot(t, w, src)
 
 		got := refDecode(t, compressed, ref.WithDecoderDictRaw(0, rawDict))
 		if !bytes.Equal(src, got) {
@@ -161,7 +161,7 @@ func TestRefDictParsedAppendToBothDirs(t *testing.T) {
 	// lite → parent
 	w := zstd.NewWriter(nil)
 	w.AddDict(liteDict)
-	compressed := w.AppendCompress(nil, src)
+	compressed := liteCompressOneShot(t, w, src)
 	got := refDecode(t, compressed, ref.WithDecoderDicts(raw))
 	if !bytes.Equal(src, got) {
 		t.Error("parsed AppendTo lite→parent mismatch")
@@ -191,7 +191,7 @@ func TestRefDictRawAppendToBothDirs(t *testing.T) {
 	// lite → parent
 	w := zstd.NewWriter(nil)
 	w.SetRawDict(rawDict)
-	compressed := w.AppendCompress(nil, src)
+	compressed := liteCompressOneShot(t, w, src)
 	got := refDecode(t, compressed, ref.WithDecoderDictRaw(0, rawDict))
 	if !bytes.Equal(src, got) {
 		t.Error("raw AppendTo lite→parent mismatch")
@@ -253,11 +253,11 @@ func TestRefDictClearAndReuse(t *testing.T) {
 	w := zstd.NewWriter(nil)
 	w.AddDict(liteDict)
 	// Encode with dict.
-	_ = w.AppendCompress(nil, src)
+	_ = liteCompressOneShot(t, w, src)
 
 	// Clear dict.
 	w.AddDict(nil)
-	compressed := w.AppendCompress(nil, src)
+	compressed := liteCompressOneShot(t, w, src)
 
 	// Should decode without dict.
 	got := refDecode(t, compressed)

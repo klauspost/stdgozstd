@@ -26,16 +26,9 @@ func TestRefLiteAppendToLevels(t *testing.T) {
 }
 
 func TestRefLiteEncodeEmpty(t *testing.T) {
-	// AppendTo with nil returns nil.
-	w := zstd.NewWriter(nil)
-	compressed := w.AppendCompress(nil, nil)
-	if len(compressed) != 0 {
-		t.Fatalf("expected empty, got %d bytes", len(compressed))
-	}
-
 	// Streaming: Write nothing, Close.
 	var buf bytes.Buffer
-	w.Reset(&buf)
+	w := zstd.NewWriter(&buf)
 	w.Close()
 	// Empty stream produces no output in lite.
 	if buf.Len() > 0 {
@@ -188,9 +181,9 @@ func TestRefLiteEncodeReadFrom(t *testing.T) {
 
 func TestRefLiteEncodeCRCOn(t *testing.T) {
 	src := testData(4096)
-	w := zstd.NewWriter(nil)
-	w.SetCRC(true)
-	compressed := w.AppendCompress(nil, src)
+	compressed := liteEncodeOpts(t, src, func(w *zstd.Writer) {
+		w.SetCRC(true)
+	})
 	got := refDecode(t, compressed)
 	if !bytes.Equal(src, got) {
 		t.Error("CRC on roundtrip mismatch")
@@ -199,9 +192,9 @@ func TestRefLiteEncodeCRCOn(t *testing.T) {
 
 func TestRefLiteEncodeCRCOff(t *testing.T) {
 	src := testData(4096)
-	w := zstd.NewWriter(nil)
-	w.SetCRC(false)
-	compressed := w.AppendCompress(nil, src)
+	compressed := liteEncodeOpts(t, src, func(w *zstd.Writer) {
+		w.SetCRC(false)
+	})
 	got := refDecode(t, compressed, ref.IgnoreChecksum(true))
 	if !bytes.Equal(src, got) {
 		t.Error("CRC off roundtrip mismatch")
@@ -276,7 +269,7 @@ func TestRefLiteEncodeConcatenated(t *testing.T) {
 	w := zstd.NewWriter(nil)
 	var concat []byte
 	for _, p := range parts {
-		concat = w.AppendCompress(concat, p)
+		concat = append(concat, liteCompressOneShot(t, w, p)...)
 	}
 	want := make([]byte, 0, 2048+4096+1024)
 	for _, p := range parts {

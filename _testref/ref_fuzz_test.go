@@ -35,8 +35,11 @@ func FuzzRefEncoderCompat(f *testing.F) {
 			return
 		}
 		_ = w.SetLevel(level)
-		compressed := w.AppendCompress(nil, data)
-		got, err := dec.DecodeAll(compressed, nil)
+		var buf bytes.Buffer
+		w.Reset(&buf)
+		w.Write(data)
+		w.Close()
+		got, err := dec.DecodeAll(buf.Bytes(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -76,8 +79,8 @@ func FuzzRefDecoderCompat(f *testing.F) {
 		}
 
 		compressed := enc.EncodeAll(data, nil)
-		_ = liteDec.Reset(bytes.NewReader(nil))
-		got, err := liteDec.AppendDecompress(nil, compressed)
+		_ = liteDec.Reset(bytes.NewReader(compressed))
+		got, err := io.ReadAll(liteDec)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -143,8 +146,12 @@ func FuzzRefDictCompat(f *testing.F) {
 			payload = payload[:8192]
 		}
 
+		var buf bytes.Buffer
 		w.SetRawDict(dictData)
-		compressed := w.AppendCompress(nil, payload)
+		w.Reset(&buf)
+		w.Write(payload)
+		w.Close()
+		compressed := buf.Bytes()
 
 		got := refDecode(t, compressed, ref.WithDecoderDictRaw(0, dictData))
 		if !bytes.Equal(payload, got) {
