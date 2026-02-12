@@ -96,7 +96,7 @@ func TestRefBadChecksumBothReject(t *testing.T) {
 	src := testData(4096)
 	w := zstd.NewWriter(nil)
 	w.SetCRC(true)
-	compressed := w.AppendCompress(nil, src)
+	compressed := liteCompressOneShot(t, w, src)
 
 	// Flip the last byte (CRC is at the end).
 	bad := make([]byte, len(compressed))

@@ -383,51 +383,6 @@ func (w *Writer) Close() error {
 	return w.err
 }
 
-// AppendCompress compresses src as a single zstd frame and appends the result to dst,
-// returning the extended buffer. It is a one-shot alternative to the streaming
-// Write/Close interface.
-//
-// The Writer's current level, dictionary, CRC, and window-size settings apply.
-// The returned frame is self-contained: it includes a frame header, one or more
-// blocks, and an optional checksum.
-//
-// Passing nil for dst allocates a new slice. Passing a non-nil dst (e.g. buf[:0])
-// lets the caller reuse memory. Multiple calls may be made to concatenate frames:
-//
-//	var frames []byte
-//	frames = w.AppendCompress(part1, frames)
-//	frames = w.AppendCompress(part2, frames)
-//
-// If src is nil or empty, AppendTo returns dst unchanged.
-//
-// AppendTo must not be called concurrently with other Writer methods, but
-// successive calls on the same Writer are safe without Reset.
-func (w *Writer) AppendCompress(dst, src []byte) []byte {
-	w.ensureInit()
-	cat := encoderCategory(w.level)
-	if w.enc != nil {
-		var encCat int
-		switch w.enc.(type) {
-		case *fastEncoder:
-			encCat = 0
-		case *doubleFastEncoder:
-			encCat = 1
-		case *betterFastEncoder:
-			encCat = 2
-		case *bestFastEncoder:
-			encCat = 3
-		}
-		if encCat != cat {
-			putEncoder(w.enc)
-			w.enc = nil
-		}
-	}
-	if w.enc == nil {
-		w.enc = w.newEncoder()
-	}
-	return w.encodeAll(w.enc, src, dst)
-}
-
 // nextBlock encodes the current filling buffer as a block.
 func (w *Writer) nextBlock(final bool) error {
 	if w.err != nil {

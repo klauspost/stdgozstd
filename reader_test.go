@@ -698,7 +698,7 @@ func TestWriteToCompressed(t *testing.T) {
 			if err := w.SetLevel(level); err != nil {
 				t.Fatal(err)
 			}
-			compressed := w.AppendCompress(nil, src)
+			compressed := compressOneShot(t, w, src)
 
 			r, err := NewReader(bytes.NewReader(compressed))
 			if err != nil {
@@ -723,7 +723,7 @@ func TestWriteToLarge(t *testing.T) {
 	rng.Read(src)
 
 	w := NewWriter(nil)
-	compressed := w.AppendCompress(nil, src)
+	compressed := compressOneShot(t, w, src)
 
 	r, err := NewReader(bytes.NewReader(compressed))
 	if err != nil {
@@ -752,7 +752,7 @@ func TestWriteToDict(t *testing.T) {
 	t.Run("raw", func(t *testing.T) {
 		w := NewWriter(nil)
 		w.SetRawDict(dictContent)
-		compressed := w.AppendCompress(nil, src)
+		compressed := compressOneShot(t, w, src)
 
 		r, err := NewReader(bytes.NewReader(compressed))
 		if err != nil {
@@ -781,7 +781,7 @@ func TestWriteToDict(t *testing.T) {
 		}
 		w := NewWriter(nil)
 		w.AddDict(d)
-		compressed := w.AppendCompress(nil, src)
+		compressed := compressOneShot(t, w, src)
 
 		r, err := NewReader(bytes.NewReader(compressed))
 		if err != nil {
@@ -861,36 +861,6 @@ func TestReaderReuseAfterCloseWriteTo(t *testing.T) {
 	}
 }
 
-func TestReaderReuseAfterCloseAppendCompress(t *testing.T) {
-	frame1 := buildRawFrame([]byte("before"))
-	frame2 := buildRawFrame([]byte("after"))
-
-	r, err := NewReader(bytes.NewReader(frame1))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "before" {
-		t.Fatalf("got %q, want %q", got, "before")
-	}
-
-	r.Close()
-
-	if err := r.Reset(bytes.NewReader(nil)); err != nil {
-		t.Fatal(err)
-	}
-	result, err := r.AppendDecompress(nil, frame2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(result) != "after" {
-		t.Fatalf("got %q, want %q", result, "after")
-	}
-}
-
 func TestReaderReuseAfterCloseMultiple(t *testing.T) {
 	r, err := NewReader(bytes.NewReader(buildRawFrame([]byte("init"))))
 	if err != nil {
@@ -923,7 +893,7 @@ func TestWriteToMatchesReadAll(t *testing.T) {
 	}
 	for _, src := range inputs {
 		w := NewWriter(nil)
-		compressed := w.AppendCompress(nil, src)
+		compressed := compressOneShot(t, w, src)
 
 		// ReadAll
 		r1, err := NewReader(bytes.NewReader(compressed))
@@ -994,15 +964,3 @@ func TestZeroValueReader(t *testing.T) {
 	r.Close()
 }
 
-func TestZeroValueReaderAppendCompress(t *testing.T) {
-	frame := buildRawFrame([]byte("decode zero"))
-	var r Reader
-	got, err := r.AppendDecompress(nil, frame)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "decode zero" {
-		t.Fatalf("got %q, want %q", got, "decode zero")
-	}
-	r.Close()
-}

@@ -84,8 +84,8 @@ func TestRoundTripLarge(t *testing.T) {
 
 func TestConcatenatedFrames(t *testing.T) {
 	w := NewWriter(nil)
-	frame1 := w.AppendCompress(nil, []byte("frame one "))
-	frame2 := w.AppendCompress(nil, []byte("frame two"))
+	frame1 := compressOneShot(t, w, []byte("frame one "))
+	frame2 := compressOneShot(t, w, []byte("frame two"))
 
 	combined := append(frame1, frame2...)
 	r, err := NewReader(bytes.NewReader(combined))
@@ -194,7 +194,7 @@ func TestAllLevelsRoundTrip(t *testing.T) {
 				if err := w.SetLevel(level); err != nil {
 					t.Fatal(err)
 				}
-				compressed := w.AppendCompress(nil, input.data)
+				compressed := compressOneShot(t, w, input.data)
 
 				r, err := NewReader(bytes.NewReader(compressed))
 				if err != nil {

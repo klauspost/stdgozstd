@@ -154,56 +154,6 @@ func (z *Reader) Read(p []byte) (int, error) {
 	return written, nil
 }
 
-// AppendDecompress decompresses src and appends the decompressed bytes to dst,
-// returning the extended buffer. It is a one-shot alternative to the streaming
-// Read interface.
-//
-// src may contain one or more concatenated zstd frames.
-//
-// The Reader must not be in the middle of a streaming Read; call Reset
-// before switching from streaming to one-shot use.
-//
-// Passing nil for dst allocates a new slice. Passing a non-nil dst lets the
-// caller reuse memory or prepend existing data:
-//
-//	result, err := r.AppendDecompress(existingPrefix, compressed)
-//
-// Any registered dictionaries (via AddDict or SetRawDict) apply.
-func (z *Reader) AppendDecompress(dst, src []byte) ([]byte, error) {
-	z.ensureInit()
-	if z.err == ErrDecoderClosed {
-		return nil, ErrDecoderClosed
-	}
-	z.frame.bBuf = byteBuf(src)
-	for {
-		err := z.frame.reset(&z.frame.bBuf)
-		if err == io.EOF {
-			return dst, nil
-		}
-		if err != nil {
-			return dst, err
-		}
-		z.frame.history.reset()
-
-		if z.frame.DictionaryID != 0 {
-			d, ok := z.dicts[z.frame.DictionaryID]
-			if !ok {
-				return dst, ErrUnknownDictionary
-			}
-			z.frame.history.setDict(d)
-		} else if d, ok := z.dicts[0]; ok {
-			z.frame.history.dict = d
-			z.frame.history.decoders.dict = d.content
-		}
-
-		var err2 error
-		dst, err2 = z.frame.runDecoder(dst, &z.block)
-		if err2 != nil {
-			return dst, err2
-		}
-	}
-}
-
 // Close releases resources. After Close, the Reader may be reused by
 // calling [Reader.Reset].
 func (z *Reader) Close() error {

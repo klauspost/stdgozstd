@@ -11,6 +11,19 @@ import (
 	"testing"
 )
 
+func compressOneShot(t testing.TB, w *Writer, src []byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
 func roundTrip(t *testing.T, src []byte) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -258,47 +271,6 @@ func TestWriterSetLevel(t *testing.T) {
 	}
 	if err := w.SetLevel(-2); err == nil {
 		t.Fatal("expected error for invalid level")
-	}
-}
-
-func TestWriterAppendCompress(t *testing.T) {
-	src := bytes.Repeat([]byte("encode all test data! "), 500)
-	w := NewWriter(nil)
-	compressed := w.AppendCompress(nil, src)
-
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = r.Close() }()
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatal("AppendCompress round-trip mismatch")
-	}
-}
-
-func TestWriterAppendCompressMultiBlock(t *testing.T) {
-	src := make([]byte, maxCompressedBlockSize*2+1000)
-	for i := range src {
-		src[i] = byte(i % 200)
-	}
-	w := NewWriter(nil)
-	compressed := w.AppendCompress(nil, src)
-
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = r.Close() }()
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatal("AppendCompress multi-block round-trip mismatch")
 	}
 }
 
@@ -570,31 +542,6 @@ func TestAllLevelsOneByte(t *testing.T) {
 	}
 }
 
-func TestAppendCompressAllLevels(t *testing.T) {
-	src := bytes.Repeat([]byte("AppendCompress test data across levels! "), 500)
-	for level := 1; level <= BestCompression; level++ {
-		t.Run("", func(t *testing.T) {
-			w := NewWriter(nil)
-			if err := w.SetLevel(level); err != nil {
-				t.Fatal(err)
-			}
-			compressed := w.AppendCompress(nil, src)
-			r, err := NewReader(bytes.NewReader(compressed))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = r.Close() }()
-			got, err := io.ReadAll(r)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(got, src) {
-				t.Fatalf("AppendCompress mismatch at level %d", level)
-			}
-		})
-	}
-}
-
 func TestLevelSwitching(t *testing.T) {
 	src := bytes.Repeat([]byte("level switching test "), 200)
 	w := NewWriter(nil)
@@ -619,25 +566,6 @@ func TestLevelSwitching(t *testing.T) {
 		if !bytes.Equal(got, src) {
 			t.Fatalf("level %d: mismatch", level)
 		}
-	}
-}
-
-func TestZeroValueWriter(t *testing.T) {
-	src := bytes.Repeat([]byte("zero value writer "), 100)
-	var w Writer
-	compressed := w.AppendCompress(nil, src)
-
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Close()
-	got, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatal("mismatch")
 	}
 }
 
@@ -667,18 +595,3 @@ func TestZeroValueWriterStream(t *testing.T) {
 	}
 }
 
-func TestZeroValueWriterConfig(t *testing.T) {
-	src := bytes.Repeat([]byte("zero config "), 100)
-	var w Writer
-	w.SetCRC(false)
-	compressed := w.AppendCompress(nil, src)
-
-	var r Reader
-	got, err := r.AppendDecompress(nil, compressed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatal("mismatch")
-	}
-}
