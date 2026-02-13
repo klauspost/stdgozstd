@@ -175,13 +175,13 @@ func (d *frameDec) reset(br byteBuffer) error {
 	}
 
 	if d.WindowSize > d.o.maxWindowSize {
-		return ErrWindowSizeExceeded
+		return &ErrWindowSizeExceeded{Allowed: d.o.maxWindowSize, Requested: d.WindowSize}
 	}
 
 	if d.WindowSize == 0 && d.SingleSegment {
 		d.WindowSize = max(d.FrameContentSize, MinWindowSize)
 		if d.WindowSize > d.o.maxWindowSize {
-			return ErrWindowSizeExceeded
+			return &ErrWindowSizeExceeded{Allowed: d.o.maxWindowSize, Requested: d.WindowSize}
 		}
 	}
 
