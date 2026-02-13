@@ -43,9 +43,20 @@ func TestWriterEmpty(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// Empty close with no writes produces nothing.
-	if buf.Len() != 0 {
-		t.Fatalf("expected 0 bytes, got %d", buf.Len())
+	if buf.Len() == 0 {
+		t.Fatal("expected non-empty frame for empty input")
+	}
+	r, err := NewReader(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty decode, got %d bytes", len(got))
 	}
 }
 
@@ -277,6 +288,30 @@ func TestWriterAppendCompress(t *testing.T) {
 	}
 	if !bytes.Equal(got, src) {
 		t.Fatal("AppendCompress round-trip mismatch")
+	}
+}
+
+func TestWriterAppendCompressEmpty(t *testing.T) {
+	w := NewWriter(nil)
+	c1 := w.AppendCompress(nil, nil)
+	c2 := w.AppendCompress(nil, []byte{})
+	if len(c1) == 0 {
+		t.Fatal("expected non-empty frame for nil input")
+	}
+	if !bytes.Equal(c1, c2) {
+		t.Fatal("nil and empty should produce identical frames")
+	}
+	r, err := NewReader(bytes.NewReader(c1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty decode, got %d bytes", len(got))
 	}
 }
 
