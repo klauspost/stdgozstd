@@ -603,7 +603,7 @@ func TestParsedDictContentSize(t *testing.T) {
 
 func TestRawDictSmall(t *testing.T) {
 	src := bytes.Repeat([]byte("small dict edge case "), 50)
-	for _, sz := range []int{1, 8, 16} {
+	for _, sz := range []int{8, 16} {
 		t.Run("", func(t *testing.T) {
 			dictContent := bytes.Repeat([]byte("x"), sz)
 			w := NewWriter(nil)
@@ -621,6 +621,38 @@ func TestRawDictSmall(t *testing.T) {
 				t.Fatal("mismatch")
 			}
 		})
+	}
+}
+
+func TestRawDictTooShortIgnored(t *testing.T) {
+	src := bytes.Repeat([]byte("short dict ignored "), 50)
+
+	// Compress without dict.
+	w := NewWriter(nil)
+	want := w.AppendCompress(nil, src)
+
+	// SetRawDict with < 8 bytes should be silently ignored.
+	for _, sz := range []int{1, 4, 7} {
+		t.Run("", func(t *testing.T) {
+			w2 := NewWriter(nil)
+			w2.SetRawDict(bytes.Repeat([]byte("x"), sz))
+			got := w2.AppendCompress(nil, src)
+			if !bytes.Equal(got, want) {
+				t.Fatalf("sz=%d: short dict was not ignored (output differs)", sz)
+			}
+		})
+	}
+
+	// Reader side: short dict should not register.
+	r, _ := NewReader(nil)
+	r.SetRawDict(bytes.Repeat([]byte("x"), 3))
+	got, err := r.AppendDecompress(nil, want)
+	_ = r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("reader mismatch")
 	}
 }
 
@@ -651,6 +683,165 @@ func TestDictWriterReuseAcrossReset(t *testing.T) {
 				t.Fatal("mismatch")
 			}
 		})
+	}
+}
+
+func TestReaderAddDictNilClear(t *testing.T) {
+	raw := loadTestDict(t)
+	d, err := ParseDict(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := bytes.Repeat([]byte("reader add dict nil clear "), 50)
+
+	w := NewWriter(nil)
+	w.AddDict(d)
+	compressed := w.AppendCompress(nil, src)
+
+	r, err := NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AddDict(d)
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch before clear")
+	}
+
+	r.AddDict(nil)
+	if err := r.Reset(bytes.NewReader(compressed)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(r)
+	_ = r.Close()
+	if err != ErrUnknownDictionary {
+		t.Fatalf("expected ErrUnknownDictionary, got: %v", err)
+	}
+}
+
+func TestReaderSetRawDictNilClear(t *testing.T) {
+	raw := loadTestDict(t)
+	d, err := ParseDict(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := bytes.Repeat([]byte("reader raw dict nil clear "), 50)
+
+	w := NewWriter(nil)
+	w.AddDict(d)
+	compressed := w.AppendCompress(nil, src)
+
+	r, err := NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AddDict(d)
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch before clear")
+	}
+
+	r.SetRawDict(nil) // clear all dicts
+	if err := r.Reset(bytes.NewReader(compressed)); err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(r)
+	_ = r.Close()
+	if err != ErrUnknownDictionary {
+		t.Fatalf("expected ErrUnknownDictionary, got: %v", err)
+	}
+}
+
+func TestReaderNilClearMultipleDicts(t *testing.T) {
+	raw := loadTestDict(t)
+	d, err := ParseDict(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dictContent := bytes.Repeat([]byte("raw dict for multi clear "), 100)
+	src := bytes.Repeat([]byte("multi dict clear test "), 50)
+
+	// Compress with parsed dict.
+	wParsed := NewWriter(nil)
+	wParsed.AddDict(d)
+	compParsed := wParsed.AppendCompress(nil, src)
+
+	// Compress with raw dict.
+	wRaw := NewWriter(nil)
+	wRaw.SetRawDict(dictContent)
+	compRaw := wRaw.AppendCompress(nil, src)
+
+	r, err := NewReader(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.AddDict(d)
+	r.SetRawDict(dictContent)
+
+	// Both should decode.
+	got, err := r.AppendDecompress(nil, compParsed)
+	if err != nil {
+		t.Fatalf("parsed dict decode: %v", err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("parsed dict mismatch")
+	}
+	got, err = r.AppendDecompress(nil, compRaw)
+	if err != nil {
+		t.Fatalf("raw dict decode: %v", err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("raw dict mismatch")
+	}
+
+	r.AddDict(nil) // clear all
+
+	_, err = r.AppendDecompress(nil, compParsed)
+	if err != ErrUnknownDictionary {
+		t.Fatalf("parsed dict after clear: expected ErrUnknownDictionary, got: %v", err)
+	}
+	_, err = r.AppendDecompress(nil, compRaw)
+	_ = r.Close()
+	// Raw dict (ID 0) doesn't embed a dict ID in the frame, so the error
+	// is a corruption from bad offsets rather than ErrUnknownDictionary.
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("raw dict after clear: expected ErrCorrupted, got: %v", err)
+	}
+}
+
+func TestWriterSetRawDictNilClear(t *testing.T) {
+	dictContent := bytes.Repeat([]byte("dict content "), 50)
+	src := []byte("hello world, compressed without dict")
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	w.SetRawDict(dictContent)
+	w.SetRawDict(nil) // clear dict
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := NewReader(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(r)
+	_ = r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
 	}
 }
 

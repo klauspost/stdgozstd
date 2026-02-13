@@ -170,6 +170,7 @@ func (w *Writer) SetCRC(b bool) {
 }
 
 // AddDict registers a parsed dictionary for compression.
+// Sending nil removes the previous dictionary.
 func (w *Writer) AddDict(d *Dict) {
 	w.ensureInit()
 	if d == nil {
@@ -180,9 +181,11 @@ func (w *Writer) AddDict(d *Dict) {
 }
 
 // SetRawDict registers raw bytes as a dictionary prefix.
+// The dictionary must be at least 8 bytes; shorter will not be used.
+// Sending nil removes any previous dictionary.
 func (w *Writer) SetRawDict(b []byte) {
 	w.ensureInit()
-	if len(b) == 0 {
+	if len(b) < 8 {
 		w.dict = nil
 		return
 	}
@@ -201,7 +204,7 @@ func (w *Writer) ResetContentSize(wr io.Writer, size int64) {
 }
 
 // Reset discards the Writer's state and prepares it to write a new frame
-// to wr. Configuration (level, window size, CRC, dictionary) is preserved.
+// to wr. Configuration is preserved.
 func (w *Writer) Reset(wr io.Writer) {
 	w.ensureInit()
 	if cap(w.filling) == 0 {

@@ -48,6 +48,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 }
 
 // Reset discards the Reader's state and makes it read from r.
+// Configuration is preserved.
 // If r is nil, Reset is equivalent to [Reader.Close].
 func (z *Reader) Reset(r io.Reader) error {
 	z.ensureInit()
@@ -204,8 +205,9 @@ func (z *Reader) AppendDecompress(dst, src []byte) ([]byte, error) {
 	}
 }
 
-// Close releases resources. After Close, the Reader may be reused by
-// calling [Reader.Reset].
+// Close releases resources but retains configuration.
+// After Close, the Reader may be reused by calling
+// [Reader.Reset].
 func (z *Reader) Close() error {
 	z.ensureInit()
 	z.err = ErrDecoderClosed
@@ -223,9 +225,14 @@ func (z *Reader) SetMaxWindowSize(n uint64) {
 }
 
 // AddDict registers a dictionary for decompression.
+// Sending nil will delete all previously registered dictionaries.
 func (z *Reader) AddDict(d *Dict) {
 	z.ensureInit()
 	if d == nil || d.d == nil {
+		if d == nil {
+			clear(z.dicts)
+			return
+		}
 		return
 	}
 	if z.dicts == nil {
@@ -235,8 +242,17 @@ func (z *Reader) AddDict(d *Dict) {
 }
 
 // SetRawDict registers raw bytes as a dictionary with ID 0.
+// The dictionary must be at least 8 bytes.
+// Sending nil will delete all previously registered dictionaries.
 func (z *Reader) SetRawDict(b []byte) {
 	z.ensureInit()
+	if b == nil {
+		clear(z.dicts)
+		return
+	}
+	if len(b) < 8 {
+		b = nil
+	}
 	if z.dicts == nil {
 		z.dicts = make(map[uint32]*dict)
 	}
