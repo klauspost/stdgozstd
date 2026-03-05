@@ -11,6 +11,7 @@ import (
 	"github.com/klauspost/stdgozstd/internal/xxhash"
 )
 
+// decoderOptions holds configuration for the frame decoder.
 type decoderOptions struct {
 	maxWindowSize  uint64
 	lowMem         bool
@@ -23,11 +24,13 @@ const (
 	MaxWindowSize = 1 << 29 // 512 MiB
 )
 
+// Frame magic bytes as defined in the zstd specification.
 const (
 	frameMagic          = "\x28\xb5\x2f\xfd"
 	skippableFrameMagic = "\x2a\x4d\x18"
 )
 
+// frameDec decodes a single zstd frame.
 type frameDec struct {
 	o   decoderOptions
 	crc *xxhash.Digest
@@ -233,6 +236,7 @@ func (d *frameDec) consumeCRC() error {
 	return nil
 }
 
+// maxDirectDecodeSize is the threshold above which runDecoder falls back to streaming.
 const maxDirectDecodeSize = 1 << 20 // 1 MiB
 
 // runDecoder decodes all blocks into dst (used for DecodeAll-style calls).

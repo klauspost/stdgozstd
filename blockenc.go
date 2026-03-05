@@ -12,6 +12,7 @@ import (
 	"github.com/klauspost/stdgozstd/internal/huff0"
 )
 
+// blockEnc encodes a single zstd block.
 type blockEnc struct {
 	size       int
 	literals   []byte
@@ -454,6 +455,7 @@ func (b *blockEnc) encode(org []byte, raw, rawAllLits bool) error {
 	return nil
 }
 
+// errIncompressible is returned when a block cannot be compressed smaller than its raw form.
 var errIncompressible = errors.New("incompressible")
 
 // genCodes assigns FSE codes to all sequences.

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package huff0 implements Huffman entropy coding for zstd.
 package huff0
 
 import (
@@ -13,6 +14,7 @@ import (
 	"github.com/klauspost/stdgozstd/internal/fse"
 )
 
+// Huffman coding constants.
 const (
 	maxSymbolValue = 255
 
@@ -24,6 +26,7 @@ const (
 	BlockSizeMax = 1<<18 - 1
 )
 
+// Errors returned by compression and decompression functions.
 var (
 	ErrIncompressible         = errors.New("input is not compressible")
 	ErrUseRLE                 = errors.New("input is single value repeated")
@@ -31,8 +34,10 @@ var (
 	ErrMaxDecodedSizeExceeded = errors.New("maximum output size exceeded")
 )
 
+// ReusePolicy controls how compression tables are reused across calls.
 type ReusePolicy uint8
 
+// Table reuse policies for compression.
 const (
 	ReusePolicyAllow ReusePolicy = iota
 	ReusePolicyPrefer
@@ -40,6 +45,7 @@ const (
 	ReusePolicyMust
 )
 
+// Scratch provides reusable scratch space for Huffman operations.
 type Scratch struct {
 	count [maxSymbolValue + 1]uint32
 
@@ -69,6 +75,7 @@ type Scratch struct {
 	huffWeight     [maxSymbolValue + 1]byte
 }
 
+// TransferCTable copies the previous compression table from src.
 func (s *Scratch) TransferCTable(src *Scratch) {
 	if cap(s.prevTable) < len(src.prevTable) {
 		s.prevTable = make(cTable, 0, maxSymbolValue+1)
@@ -78,6 +85,7 @@ func (s *Scratch) TransferCTable(src *Scratch) {
 	s.prevTableLog = src.prevTableLog
 }
 
+// prepare validates parameters and initializes scratch space for the input.
 func (s *Scratch) prepare(in []byte) (*Scratch, error) {
 	if len(in) > BlockSizeMax {
 		return nil, ErrTooBig
@@ -122,8 +130,10 @@ func (s *Scratch) prepare(in []byte) (*Scratch, error) {
 	return s, nil
 }
 
+// cTable is a Huffman compression table indexed by symbol.
 type cTable []cTableEntry
 
+// write serializes the compression table to s.Out.
 func (c cTable) write(s *Scratch) error {
 	var (
 		bitsToWeight   [tableLogMax + 1]byte
@@ -183,6 +193,7 @@ func (c cTable) write(s *Scratch) error {
 	return nil
 }
 
+// estTableSize estimates the serialized size of the compression table.
 func (c cTable) estTableSize(s *Scratch) (sz int, err error) {
 	var (
 		bitsToWeight   [tableLogMax + 1]byte
@@ -235,6 +246,7 @@ func (c cTable) estTableSize(s *Scratch) (sz int, err error) {
 	return sz, nil
 }
 
+// estimateSize returns the estimated compressed data size in bytes for the given histogram.
 func (c cTable) estimateSize(hist []uint32) int {
 	nbBits := uint32(7)
 	for i, v := range c[:len(hist)] {
@@ -243,10 +255,12 @@ func (c cTable) estimateSize(hist []uint32) int {
 	return int(nbBits >> 3)
 }
 
+// highBit32 returns the index of the highest set bit (0-based).
 func highBit32(val uint32) (n uint32) {
 	return uint32(bits.Len32(val) - 1)
 }
 
+// EstimateSizes returns estimated compressed sizes: new table, data-only, and reuse-table.
 func EstimateSizes(in []byte, s *Scratch) (tableSz, dataSz, reuseSz int, err error) {
 	s, err = s.prepare(in)
 	if err != nil {
@@ -300,6 +314,7 @@ func EstimateSizes(in []byte, s *Scratch) (tableSz, dataSz, reuseSz int, err err
 	return tableSz, dataSz, reuseSz, nil
 }
 
+// countSimple counts symbol frequencies and checks if the previous table can be reused.
 func (s *Scratch) countSimple(in []byte) (max int, reuse bool) {
 	reuse = true
 	_ = s.count
@@ -336,6 +351,7 @@ func (s *Scratch) countSimple(in []byte) (max int, reuse bool) {
 	return int(m), false
 }
 
+// canUseTable reports whether c can encode all symbols in the current count.
 func (s *Scratch) canUseTable(c cTable) bool {
 	if len(c) < int(s.symbolLen) {
 		return false
@@ -348,6 +364,7 @@ func (s *Scratch) canUseTable(c cTable) bool {
 	return true
 }
 
+// minTableLog returns the minimum table log size for the current input.
 func (s *Scratch) minTableLog() uint8 {
 	minBitsSrc := highBit32(uint32(s.srcLen)) + 1
 	minBitsSymbols := highBit32(uint32(s.symbolLen-1)) + 2
@@ -357,6 +374,7 @@ func (s *Scratch) minTableLog() uint8 {
 	return uint8(minBitsSymbols)
 }
 
+// optimalTableLog selects the best table log size and stores it in s.actualTableLog.
 func (s *Scratch) optimalTableLog() {
 	tableLog := s.TableLog
 	minBits := s.minTableLog()
@@ -376,13 +394,16 @@ func (s *Scratch) optimalTableLog() {
 	s.actualTableLog = tableLog
 }
 
+// cTableEntry holds the code value and bit length for a single symbol.
 type cTableEntry struct {
 	val   uint16
 	nBits uint8
 }
 
+// huffNodesMask is used to wrap indices into the huffman node array.
 const huffNodesMask = huffNodesLen - 1
 
+// buildCTable builds the Huffman compression table from symbol counts.
 func (s *Scratch) buildCTable() error {
 	s.optimalTableLog()
 	s.huffSort()
@@ -484,7 +505,9 @@ func (s *Scratch) buildCTable() error {
 	return nil
 }
 
+// huffSort sorts symbols by count into the node list using radix sort.
 func (s *Scratch) huffSort() {
+	// rankPos tracks base and current position per rank bucket.
 	type rankPos struct {
 		base    uint32
 		current uint32
@@ -520,6 +543,7 @@ func (s *Scratch) huffSort() {
 	}
 }
 
+// setMaxHeight limits Huffman tree depth to s.actualTableLog and rebalances.
 func (s *Scratch) setMaxHeight(lastNonNull int) uint8 {
 	maxNbBits := s.actualTableLog
 	huffNode := s.nodes[1 : huffNodesLen+1]
@@ -619,17 +643,31 @@ func (s *Scratch) setMaxHeight(lastNonNull int) uint8 {
 	return maxNbBits
 }
 
+// nodeElt packs count, parent, symbol, and nbBits into a single uint64.
 type nodeElt uint64
 
+// makeNodeElt creates a nodeElt with the given count and symbol.
 func makeNodeElt(count uint32, symbol byte) nodeElt {
 	return nodeElt(count) | nodeElt(symbol)<<48
 }
 
-func (e *nodeElt) count() uint32  { return uint32(*e) }
-func (e *nodeElt) parent() uint16 { return uint16(*e >> 32) }
-func (e *nodeElt) symbol() byte   { return byte(*e >> 48) }
-func (e *nodeElt) nbBits() uint8  { return uint8(*e >> 56) }
+// count returns the occurrence count (bits 0-31).
+func (e *nodeElt) count() uint32 { return uint32(*e) }
 
+// parent returns the parent node index (bits 32-47).
+func (e *nodeElt) parent() uint16 { return uint16(*e >> 32) }
+
+// symbol returns the byte symbol (bits 48-55).
+func (e *nodeElt) symbol() byte { return byte(*e >> 48) }
+
+// nbBits returns the assigned bit length (bits 56-63).
+func (e *nodeElt) nbBits() uint8 { return uint8(*e >> 56) }
+
+// setCount sets the occurrence count field.
 func (e *nodeElt) setCount(c uint32) { *e = (*e)&0xffffffff00000000 | nodeElt(c) }
+
+// setParent sets the parent node index field.
 func (e *nodeElt) setParent(p int16) { *e = (*e)&0xffff0000ffffffff | nodeElt(uint16(p))<<32 }
+
+// setNbBits sets the assigned bit length field.
 func (e *nodeElt) setNbBits(n uint8) { *e = (*e)&0x00ffffffffffffff | nodeElt(n)<<56 }

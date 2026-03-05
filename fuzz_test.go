@@ -66,7 +66,7 @@ func FuzzRoundTrip(f *testing.F) {
 		if len(compressed) < 2 {
 			return
 		}
-		got, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
+		_, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
 		if err == nil {
 			t.Fatal("expected error from AppendDecompress due to truncated input")
 		}
@@ -177,7 +177,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 		if len(compressed) < 2 {
 			return
 		}
-		got, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
+		_, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
 		if err == nil {
 			t.Fatal("expected error from AppendDecompress due to truncated input")
 		}

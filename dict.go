@@ -19,6 +19,7 @@ type dict struct {
 	content             []byte
 }
 
+// dictMagic is the four-byte magic number for zstd dictionaries.
 const dictMagic = "\x37\xa4\x30\xec"
 
 // ID returns the dictionary ID, or 0 if nil.
