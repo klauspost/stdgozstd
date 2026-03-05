@@ -67,18 +67,18 @@ func (xh *Digest) update(b []byte) {
 	if xh.cnt > 0 {
 		n := copy(xh.buf[xh.cnt:], b)
 		b = b[n:]
-		xh.v[0] = xh.round(xh.v[0], binary.LittleEndian.Uint64(xh.buf[:]))
-		xh.v[1] = xh.round(xh.v[1], binary.LittleEndian.Uint64(xh.buf[8:]))
-		xh.v[2] = xh.round(xh.v[2], binary.LittleEndian.Uint64(xh.buf[16:]))
-		xh.v[3] = xh.round(xh.v[3], binary.LittleEndian.Uint64(xh.buf[24:]))
+		xh.v[0] = round(xh.v[0], binary.LittleEndian.Uint64(xh.buf[:]))
+		xh.v[1] = round(xh.v[1], binary.LittleEndian.Uint64(xh.buf[8:]))
+		xh.v[2] = round(xh.v[2], binary.LittleEndian.Uint64(xh.buf[16:]))
+		xh.v[3] = round(xh.v[3], binary.LittleEndian.Uint64(xh.buf[24:]))
 		xh.cnt = 0
 	}
 
 	for len(b) >= 32 {
-		xh.v[0] = xh.round(xh.v[0], binary.LittleEndian.Uint64(b))
-		xh.v[1] = xh.round(xh.v[1], binary.LittleEndian.Uint64(b[8:]))
-		xh.v[2] = xh.round(xh.v[2], binary.LittleEndian.Uint64(b[16:]))
-		xh.v[3] = xh.round(xh.v[3], binary.LittleEndian.Uint64(b[24:]))
+		xh.v[0] = round(xh.v[0], binary.LittleEndian.Uint64(b))
+		xh.v[1] = round(xh.v[1], binary.LittleEndian.Uint64(b[8:]))
+		xh.v[2] = round(xh.v[2], binary.LittleEndian.Uint64(b[16:]))
+		xh.v[3] = round(xh.v[3], binary.LittleEndian.Uint64(b[24:]))
 		b = b[32:]
 	}
 
@@ -108,10 +108,10 @@ func (xh *Digest) Sum64() uint64 {
 			bits.RotateLeft64(xh.v[1], 7) +
 			bits.RotateLeft64(xh.v[2], 12) +
 			bits.RotateLeft64(xh.v[3], 18)
-		h64 = xh.mergeRound(h64, xh.v[0])
-		h64 = xh.mergeRound(h64, xh.v[1])
-		h64 = xh.mergeRound(h64, xh.v[2])
-		h64 = xh.mergeRound(h64, xh.v[3])
+		h64 = mergeRound(h64, xh.v[0])
+		h64 = mergeRound(h64, xh.v[1])
+		h64 = mergeRound(h64, xh.v[2])
+		h64 = mergeRound(h64, xh.v[3])
 	}
 
 	h64 += xh.len
@@ -120,7 +120,7 @@ func (xh *Digest) Sum64() uint64 {
 	len &= 31
 	buf := xh.buf[:]
 	for len >= 8 {
-		k1 := xh.round(0, binary.LittleEndian.Uint64(buf))
+		k1 := round(0, binary.LittleEndian.Uint64(buf))
 		buf = buf[8:]
 		h64 ^= k1
 		h64 = bits.RotateLeft64(h64, 27)*xxhPrime64c1 + xxhPrime64c4
@@ -148,18 +148,75 @@ func (xh *Digest) Sum64() uint64 {
 	return h64
 }
 
-// round updates a value.
-func (xh *Digest) round(v, n uint64) uint64 {
+func round(v, n uint64) uint64 {
 	v += n * xxhPrime64c2
 	v = bits.RotateLeft64(v, 31)
 	v *= xxhPrime64c1
 	return v
 }
 
-// mergeRound updates a value in the final round.
-func (xh *Digest) mergeRound(v, n uint64) uint64 {
-	n = xh.round(0, n)
+func mergeRound(v, n uint64) uint64 {
+	n = round(0, n)
 	v ^= n
 	v = v*xxhPrime64c1 + xxhPrime64c4
 	return v
+}
+
+// Sum64 computes the xxHash-64 digest of b with seed 0.
+func Sum64(b []byte) uint64 {
+	n := uint64(len(b))
+	var h64 uint64
+
+	if n >= 32 {
+		v1 := uint64(xxhPrime64c1)
+		v1 += xxhPrime64c2
+		v2 := uint64(xxhPrime64c2)
+		v3 := uint64(0)
+		v4 := uint64(xxhPrime64c1)
+		v4 = -v4
+		for len(b) >= 32 {
+			v1 = round(v1, binary.LittleEndian.Uint64(b))
+			v2 = round(v2, binary.LittleEndian.Uint64(b[8:]))
+			v3 = round(v3, binary.LittleEndian.Uint64(b[16:]))
+			v4 = round(v4, binary.LittleEndian.Uint64(b[24:]))
+			b = b[32:]
+		}
+		h64 = bits.RotateLeft64(v1, 1) +
+			bits.RotateLeft64(v2, 7) +
+			bits.RotateLeft64(v3, 12) +
+			bits.RotateLeft64(v4, 18)
+		h64 = mergeRound(h64, v1)
+		h64 = mergeRound(h64, v2)
+		h64 = mergeRound(h64, v3)
+		h64 = mergeRound(h64, v4)
+	} else {
+		h64 = xxhPrime64c5
+	}
+
+	h64 += n
+
+	for len(b) >= 8 {
+		k1 := round(0, binary.LittleEndian.Uint64(b))
+		b = b[8:]
+		h64 ^= k1
+		h64 = bits.RotateLeft64(h64, 27)*xxhPrime64c1 + xxhPrime64c4
+	}
+	if len(b) >= 4 {
+		h64 ^= uint64(binary.LittleEndian.Uint32(b)) * xxhPrime64c1
+		b = b[4:]
+		h64 = bits.RotateLeft64(h64, 23)*xxhPrime64c2 + xxhPrime64c3
+	}
+	for len(b) > 0 {
+		h64 ^= uint64(b[0]) * xxhPrime64c5
+		b = b[1:]
+		h64 = bits.RotateLeft64(h64, 11) * xxhPrime64c1
+	}
+
+	h64 ^= h64 >> 33
+	h64 *= xxhPrime64c2
+	h64 ^= h64 >> 29
+	h64 *= xxhPrime64c3
+	h64 ^= h64 >> 32
+
+	return h64
 }

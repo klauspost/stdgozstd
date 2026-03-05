@@ -7,14 +7,9 @@ package xxhash
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"testing"
 )
-
-func sum64(b []byte) uint64 {
-	d := New()
-	_, _ = d.Write(b)
-	return d.Sum64()
-}
 
 // Known test vectors from the xxhash specification.
 var testVectors = []struct {
@@ -34,11 +29,11 @@ var testVectors = []struct {
 	{"abcdefghijklmnopqrstuvwxyz0123456789", 0x64f23ecf1609b766},
 }
 
-func TestVectors(t *testing.T) {
+func TestSum64(t *testing.T) {
 	for _, tc := range testVectors {
-		got := sum64([]byte(tc.input))
+		got := Sum64([]byte(tc.input))
 		if got != tc.want {
-			t.Errorf("sum64(%q) = %#016x, want %#016x", tc.input, got, tc.want)
+			t.Errorf("Sum64(%q) = %#016x, want %#016x", tc.input, got, tc.want)
 		}
 	}
 }
@@ -48,15 +43,16 @@ func TestStreamingVsOneShot(t *testing.T) {
 		d := New()
 		_, _ = d.Write([]byte(tc.input))
 		got := d.Sum64()
-		if got != tc.want {
-			t.Errorf("streaming(%q) = %#016x, want %#016x", tc.input, got, tc.want)
+		want := Sum64([]byte(tc.input))
+		if got != want {
+			t.Errorf("streaming(%q) = %#016x, Sum64 = %#016x", tc.input, got, want)
 		}
 	}
 }
 
 func TestStreamingByteAtATime(t *testing.T) {
 	input := []byte("abcdefghijklmnopqrstuvwxyz0123456789")
-	want := sum64(input)
+	want := Sum64(input)
 	d := New()
 	for _, b := range input {
 		_, _ = d.Write([]byte{b})
@@ -76,7 +72,7 @@ func TestZeroLengthWrite(t *testing.T) {
 	if n != 0 || err != nil {
 		t.Errorf("Write([]) = (%d, %v), want (0, nil)", n, err)
 	}
-	if got, want := d.Sum64(), sum64(nil); got != want {
+	if got, want := d.Sum64(), Sum64(nil); got != want {
 		t.Errorf("empty = %#016x, want %#016x", got, want)
 	}
 }
@@ -87,11 +83,11 @@ func TestMultipleResets(t *testing.T) {
 		_, _ = d.Write([]byte("hello"))
 		d.Reset()
 	}
-	if got, want := d.Sum64(), sum64(nil); got != want {
+	if got, want := d.Sum64(), Sum64(nil); got != want {
 		t.Errorf("after resets = %#016x, want %#016x", got, want)
 	}
 	_, _ = d.Write([]byte("a"))
-	if got, want := d.Sum64(), sum64([]byte("a")); got != want {
+	if got, want := d.Sum64(), Sum64([]byte("a")); got != want {
 		t.Errorf("after reset+write = %#016x, want %#016x", got, want)
 	}
 }
@@ -130,5 +126,36 @@ func TestSumAppend(t *testing.T) {
 	}
 	if len(result) != len(prefix)+8 {
 		t.Errorf("Sum result length = %d, want %d", len(result), len(prefix)+8)
+	}
+}
+
+// TestSum64VsStreaming checks Sum64 matches streaming Digest for various sizes.
+func TestSum64VsStreaming(t *testing.T) {
+	sizes := []int{0, 1, 4, 8, 16, 31, 32, 33, 64, 100, 1024}
+	for _, sz := range sizes {
+		input := make([]byte, sz)
+		for i := range input {
+			input[i] = byte(i)
+		}
+		d := New()
+		d.Write(input)
+		want := d.Sum64()
+		got := Sum64(input)
+		if got != want {
+			t.Errorf("size %d: Sum64 = %#016x, streaming = %#016x", sz, got, want)
+		}
+	}
+}
+
+func BenchmarkSum64(b *testing.B) {
+	for _, sz := range []int{0, 4, 32, 64, 1024} {
+		input := make([]byte, sz)
+		b.Run(fmt.Sprintf("%d", sz), func(b *testing.B) {
+			b.SetBytes(int64(sz))
+			b.ReportAllocs()
+			for range b.N {
+				_ = Sum64(input)
+			}
+		})
 	}
 }
