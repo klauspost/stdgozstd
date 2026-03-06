@@ -4,6 +4,7 @@
 
 package zstd
 
+// byteReader reads bytes sequentially from a byte slice.
 type byteReader struct {
 	b   []byte
 	off int

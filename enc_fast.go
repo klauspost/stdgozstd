@@ -4,6 +4,7 @@
 
 package zstd
 
+// Hash table parameters for the fast encoder.
 const (
 	tableBits        = 15
 	tableSize        = 1 << tableBits
@@ -11,16 +12,19 @@ const (
 	maxMatchLength   = 131074
 )
 
+// tableEntry stores a hash table match candidate.
 type tableEntry struct {
 	val    uint32
 	offset int32
 }
 
+// fastEncoder implements the fast encoder (levels 1-2).
 type fastEncoder struct {
 	encBase
 	table [tableSize]tableEntry
 }
 
+// encode compresses src into blk using the fast algorithm with history.
 func (e *fastEncoder) encode(blk *blockEnc, src []byte) {
 	const (
 		inputMargin            = 8
@@ -200,6 +204,7 @@ encodeLoop:
 	blk.recentOffsets[1] = uint32(offset2)
 }
 
+// encodeNoHist compresses src into blk without preserving history between calls.
 func (e *fastEncoder) encodeNoHist(blk *blockEnc, src []byte) {
 	const (
 		inputMargin            = 8
@@ -363,6 +368,7 @@ encodeLoop:
 	}
 }
 
+// reset prepares the encoder for a new stream, optionally loading a dictionary.
 func (e *fastEncoder) reset(d *dict, singleBlock bool) {
 	e.resetBase(d, singleBlock)
 	if d == nil {

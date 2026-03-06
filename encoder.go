@@ -12,6 +12,7 @@ import (
 	"github.com/klauspost/stdgozstd/internal/xxhash"
 )
 
+// encoder is the internal interface shared by all compression encoders.
 type encoder interface {
 	encode(blk *blockEnc, src []byte)
 	encodeNoHist(blk *blockEnc, src []byte)
@@ -43,16 +44,19 @@ func (e *encBase) configure(maxMatchOff, bufferReset int32, lowMem bool) {
 	e.lowMem = lowMem
 }
 
+// checksum returns the running xxhash digest for the stream.
 func (e *encBase) checksum() *xxhash.Digest {
 	return e.crc
 }
 
+// appendCRC appends the lower 4 bytes of the xxhash checksum to dst.
 func (e *encBase) appendCRC(dst []byte) []byte {
 	crc := e.crc.Sum(e.tmp[:0])
 	dst = append(dst, crc[7], crc[6], crc[5], crc[4])
 	return dst
 }
 
+// windowSize returns the effective window size, clamped to the maximum match offset.
 func (e *encBase) windowSize(size int64) int32 {
 	if size > 0 && size < int64(e.maxMatchOff) {
 		b := max(int32(1)<<uint(bits.Len(uint(size))), 1024)
@@ -61,6 +65,7 @@ func (e *encBase) windowSize(size int64) int32 {
 	return e.maxMatchOff
 }
 
+// block returns the encoder's reusable block buffer.
 func (e *encBase) block() *blockEnc {
 	return e.blk
 }
@@ -150,6 +155,7 @@ func (e *encBase) resetBase(d *dict, singleBlock bool) {
 	}
 }
 
+// Hash multiplier primes for various match lengths.
 const (
 	prime3bytes = 506832829
 	prime4bytes = 2654435761

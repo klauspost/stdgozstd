@@ -11,6 +11,7 @@ import (
 	"math/bits"
 )
 
+// FSE table configuration limits.
 const (
 	maxMemoryUsage     = 14
 	defaultMemoryUsage = 13
@@ -21,11 +22,13 @@ const (
 	maxSymbolValue     = 255
 )
 
+// Compression sentinel errors.
 var (
 	ErrIncompressible = errors.New("input is not compressible")
 	ErrUseRLE         = errors.New("input is single value repeated")
 )
 
+// Scratch holds reusable state for FSE compression and decompression.
 type Scratch struct {
 	count    [maxSymbolValue + 1]uint32
 	norm     [maxSymbolValue + 1]int16
@@ -36,7 +39,7 @@ type Scratch struct {
 	decTable []decSymbol
 	maxCount int
 
-	Out            []byte
+	Out             []byte
 	DecompressLimit int
 
 	symbolLen      uint16
@@ -48,16 +51,19 @@ type Scratch struct {
 	TableLog       uint8
 }
 
+// Histogram returns the symbol count histogram.
 func (s *Scratch) Histogram() []uint32 {
 	return s.count[:]
 }
 
+// HistogramFinished marks the histogram as externally populated.
 func (s *Scratch) HistogramFinished(maxSymbol uint8, maxCount int) {
 	s.maxCount = maxCount
 	s.symbolLen = uint16(maxSymbol) + 1
 	s.clearCount = maxCount != 0
 }
 
+// prepare initializes scratch with defaults and validates parameters.
 func (s *Scratch) prepare(in []byte) (*Scratch, error) {
 	if s == nil {
 		s = &Scratch{}
@@ -87,10 +93,12 @@ func (s *Scratch) prepare(in []byte) (*Scratch, error) {
 	return s, nil
 }
 
+// tableStep returns the step size for spreading symbols across the table.
 func tableStep(tableSize uint32) uint32 {
 	return (tableSize >> 1) + (tableSize >> 3) + 3
 }
 
+// highBits returns the position of the highest set bit (0-indexed).
 func highBits(val uint32) (n uint32) {
 	return uint32(bits.Len32(val) - 1)
 }

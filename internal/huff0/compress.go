@@ -9,6 +9,7 @@ import (
 	"math"
 )
 
+// Compress1X compresses in using single-stream Huffman coding.
 func Compress1X(in []byte, s *Scratch) (out []byte, reUsed bool, err error) {
 	s, err = s.prepare(in)
 	if err != nil {
@@ -17,6 +18,7 @@ func Compress1X(in []byte, s *Scratch) (out []byte, reUsed bool, err error) {
 	return compress(in, s, s.compress1X)
 }
 
+// Compress4X compresses in using four-stream Huffman coding.
 func Compress4X(in []byte, s *Scratch) (out []byte, reUsed bool, err error) {
 	s, err = s.prepare(in)
 	if err != nil {
@@ -25,6 +27,7 @@ func Compress4X(in []byte, s *Scratch) (out []byte, reUsed bool, err error) {
 	return compress(in, s, s.compress4X)
 }
 
+// compress handles table building, reuse logic, and delegates to the compressor function.
 func compress(in []byte, s *Scratch, compressor func(src []byte) ([]byte, error)) (out []byte, reUsed bool, err error) {
 	if s.Reuse == ReusePolicyNone {
 		s.prevTable = s.prevTable[:0]
@@ -129,10 +132,12 @@ func compress(in []byte, s *Scratch, compressor func(src []byte) ([]byte, error)
 	return s.Out, false, nil
 }
 
+// compress1X compresses src into a single Huffman stream.
 func (s *Scratch) compress1X(src []byte) ([]byte, error) {
 	return s.compress1xDo(s.Out, src), nil
 }
 
+// compress1xDo performs single-stream Huffman encoding of src, appending to dst.
 func (s *Scratch) compress1xDo(dst, src []byte) []byte {
 	var bw = bitWriter{out: dst}
 
@@ -163,8 +168,10 @@ func (s *Scratch) compress1xDo(dst, src []byte) []byte {
 	return bw.out
 }
 
+// sixZeros is used as placeholder for the 4-stream segment size header.
 var sixZeros [6]byte
 
+// compress4X compresses src into four interleaved Huffman streams.
 func (s *Scratch) compress4X(src []byte) ([]byte, error) {
 	if len(src) < 12 {
 		return nil, ErrIncompressible

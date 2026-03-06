@@ -11,8 +11,10 @@ import (
 	"github.com/klauspost/stdgozstd/internal/huff0"
 )
 
+// blockType identifies the encoding type of a zstd block.
 type blockType uint8
 
+// Block type constants as defined in the zstd specification.
 const (
 	blockTypeRaw blockType = iota
 	blockTypeRLE
@@ -20,8 +22,10 @@ const (
 	blockTypeReserved
 )
 
+// literalsBlockType identifies the encoding type of the literals section.
 type literalsBlockType uint8
 
+// Literals block type constants as defined in the zstd specification.
 const (
 	literalsBlockRaw literalsBlockType = iota
 	literalsBlockRLE
@@ -29,6 +33,7 @@ const (
 	literalsBlockTreeless
 )
 
+// Block and sequence size limits.
 const (
 	maxCompressedBlockSize      = 128 << 10
 	compressedBlockOverAlloc    = 16
@@ -38,11 +43,13 @@ const (
 	maxSequences                = 0x7f00 + 0xffff
 )
 
+// Decoder object pools for reuse across blocks.
 var (
 	huffDecoderPool = sync.Pool{New: func() any { return &huff0.Scratch{} }}
 	fseDecoderPool  = sync.Pool{New: func() any { return &fseDecoder{} }}
 )
 
+// blockDec decodes a single zstd block.
 type blockDec struct {
 	data        []byte
 	dataStorage []byte

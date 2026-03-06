@@ -9,8 +9,10 @@ import (
 	"fmt"
 )
 
+// tablelogAbsoluteMax is the hard upper limit on table log size.
 const tablelogAbsoluteMax = 15
 
+// Decompress returns the FSE-decompressed form of b.
 func Decompress(b []byte, s *Scratch) ([]byte, error) {
 	s, err := s.prepare(b)
 	if err != nil {
@@ -29,6 +31,7 @@ func Decompress(b []byte, s *Scratch) ([]byte, error) {
 	return s.Out, nil
 }
 
+// readNCount reads the normalized symbol count header from the input.
 func (s *Scratch) readNCount() error {
 	var (
 		charnum   uint16
@@ -149,12 +152,14 @@ func (s *Scratch) readNCount() error {
 	return nil
 }
 
+// decSymbol is a single entry in the decompression table.
 type decSymbol struct {
 	newState uint16
 	symbol   uint8
 	nbBits   uint8
 }
 
+// allocDtable ensures the decompression table slices have sufficient capacity.
 func (s *Scratch) allocDtable() {
 	tableSize := 1 << s.actualTableLog
 	if cap(s.decTable) < tableSize {
@@ -173,6 +178,7 @@ func (s *Scratch) allocDtable() {
 	s.ct.stateTable = s.ct.stateTable[:256]
 }
 
+// buildDtable builds the decompression table from normalized counts.
 func (s *Scratch) buildDtable() error {
 	tableSize := uint32(1 << s.actualTableLog)
 	highThreshold := tableSize - 1
@@ -233,6 +239,7 @@ func (s *Scratch) buildDtable() error {
 	return nil
 }
 
+// decompress decodes the FSE-compressed data using the loaded table.
 func (s *Scratch) decompress() error {
 	br := &s.bits
 	if err := br.init(s.br.unread()); err != nil {
@@ -300,18 +307,21 @@ func (s *Scratch) decompress() error {
 	return br.close()
 }
 
+// decoder tracks FSE decompression state for one interleaved stream.
 type decoder struct {
 	state uint16
 	br    *bitReader
 	dt    []decSymbol
 }
 
+// init reads the initial state from the bitstream.
 func (d *decoder) init(in *bitReader, dt []decSymbol, tableLog uint8) {
 	d.dt = dt
 	d.br = in
 	d.state = in.getBits(tableLog)
 }
 
+// next decodes the current symbol and advances the state.
 func (d *decoder) next() uint8 {
 	n := &d.dt[d.state]
 	lowBits := d.br.getBits(n.nbBits)
@@ -319,14 +329,17 @@ func (d *decoder) next() uint8 {
 	return n.symbol
 }
 
+// finished reports whether this decoder has reached end of stream.
 func (d *decoder) finished() bool {
 	return d.br.finished() && d.dt[d.state].nbBits > 0
 }
 
+// final returns the last symbol without reading additional bits.
 func (d *decoder) final() uint8 {
 	return d.dt[d.state].symbol
 }
 
+// nextFast decodes using getBitsFast, skipping bounds checks.
 func (d *decoder) nextFast() uint8 {
 	n := d.dt[d.state]
 	lowBits := d.br.getBitsFast(n.nbBits)
