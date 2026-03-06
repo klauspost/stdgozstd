@@ -9,6 +9,7 @@ import (
 	"io"
 )
 
+// byteBuffer abstracts reading from an in-memory buffer or an io.Reader.
 type byteBuffer interface {
 	readSmall(n int) ([]byte, error)
 	readBig(n int, dst []byte) ([]byte, error)
@@ -16,6 +17,7 @@ type byteBuffer interface {
 	skipN(n int64) error
 }
 
+// byteBuf is a byteBuffer backed by an in-memory byte slice.
 type byteBuf []byte
 
 // readSmall reads n bytes from the buffer.
@@ -64,6 +66,7 @@ func (b *byteBuf) skipN(n int64) error {
 	return nil
 }
 
+// readerWrapper is a byteBuffer backed by an io.Reader.
 type readerWrapper struct {
 	r   io.Reader
 	tmp [8]byte

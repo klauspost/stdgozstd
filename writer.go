@@ -20,8 +20,10 @@ const (
 	BestCompression    = 9  // highest compression, slowest speed
 )
 
+// encoderPools caches encoders by category to avoid repeated hash table allocation.
 var encoderPools [4]sync.Pool
 
+// putEncoder returns an encoder to its pool for reuse.
 func putEncoder(enc encoder) {
 	switch enc.(type) {
 	case *fastEncoder:
@@ -35,6 +37,7 @@ func putEncoder(enc encoder) {
 	}
 }
 
+// encoderCategory maps a compression level to a pool index (0-3).
 func encoderCategory(level int) int {
 	switch {
 	case level <= 2:
@@ -75,6 +78,7 @@ type Writer struct {
 	initialized bool
 }
 
+// ensureInit lazily initializes the Writer on first use.
 func (w *Writer) ensureInit() {
 	if w.initialized {
 		return

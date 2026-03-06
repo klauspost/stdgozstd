@@ -4,12 +4,14 @@
 
 package zstd
 
+// bitWriter writes bits to a forward bitstream.
 type bitWriter struct {
 	bitContainer uint64
 	nBits        uint8
 	out          []byte
 }
 
+// bitMask16 maps bit count to a 16-bit mask of that many low bits.
 var bitMask16 = [32]uint16{
 	0, 1, 3, 7, 0xF, 0x1F,
 	0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF,
@@ -18,6 +20,7 @@ var bitMask16 = [32]uint16{
 	0xFFFF, 0xFFFF,
 }
 
+// bitMask32 maps bit count to a 32-bit mask of that many low bits.
 var bitMask32 = [32]uint32{
 	0, 1, 3, 7, 0xF, 0x1F, 0x3F, 0x7F, 0xFF,
 	0x1FF, 0x3FF, 0x7FF, 0xFFF, 0x1FFF, 0x3FFF, 0x7FFF, 0xFFFF,

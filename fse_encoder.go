@@ -10,6 +10,7 @@ import (
 	"math"
 )
 
+// FSE encoder size limits.
 const (
 	maxEncTableLog    = 8
 	maxEncTablesize   = 1 << maxTableLog
@@ -18,6 +19,7 @@ const (
 	maxEncSymbolValue = maxMatchLengthSymbol
 )
 
+// fseEncoder builds and holds an FSE compression table.
 type fseEncoder struct {
 	symbolLen      uint16
 	actualTableLog uint8
@@ -34,12 +36,14 @@ type fseEncoder struct {
 	norm           [256]int16
 }
 
+// cTable holds the FSE compression table arrays.
 type cTable struct {
 	tableSymbol []byte
 	stateTable  []uint16
 	symbolTT    []symbolTransform
 }
 
+// symbolTransform holds the per-symbol encoding parameters for FSE.
 type symbolTransform struct {
 	deltaNbBits    uint32
 	deltaFindState int16
@@ -172,6 +176,7 @@ func (s *fseEncoder) buildCTable() error {
 	return nil
 }
 
+// rtbTable contains thresholds for the "rest to beat" normalization heuristic.
 var rtbTable = [...]uint32{0, 473195, 504333, 520860, 550000, 700000, 750000, 830000}
 
 // setRLE configures the encoder for a single repeated symbol.
@@ -401,17 +406,17 @@ func (s *fseEncoder) writeCount(out []byte) ([]byte, error) {
 	}
 
 	var (
-		tableLog  = s.actualTableLog
-		tableSize = 1 << tableLog
-		previous0 bool
-		charnum   uint16
+		tableLog      = s.actualTableLog
+		tableSize     = 1 << tableLog
+		previous0     bool
+		charnum       uint16
 		maxHeaderSize = ((int(s.symbolLen) * int(tableLog)) >> 3) + 3 + 2
-		bitStream = uint32(tableLog - minEncTablelog)
-		bitCount  = uint(4)
-		remaining = int16(tableSize + 1)
-		threshold = int16(tableSize)
-		nbBits    = uint(tableLog + 1)
-		outP      = len(out)
+		bitStream     = uint32(tableLog - minEncTablelog)
+		bitCount      = uint(4)
+		remaining     = int16(tableSize + 1)
+		threshold     = int16(tableSize)
+		nbBits        = uint(tableLog + 1)
+		outP          = len(out)
 	)
 	if cap(out) < outP+maxHeaderSize {
 		out = append(out, make([]byte, maxHeaderSize*3)...)
@@ -547,6 +552,7 @@ func (s *fseEncoder) maxHeaderSize() uint32 {
 	return (((uint32(s.symbolLen) * uint32(s.actualTableLog)) >> 3) + 3) * 8
 }
 
+// cState tracks the current state during FSE-driven sequence encoding.
 type cState struct {
 	bw         *bitWriter
 	stateTable []uint16

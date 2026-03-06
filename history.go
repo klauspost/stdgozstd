@@ -6,6 +6,7 @@ package zstd
 
 import "github.com/klauspost/stdgozstd/internal/huff0"
 
+// history maintains the decoder's sliding window and FSE/Huffman state.
 type history struct {
 	huffTree         *huff0.Scratch
 	decoders         sequenceDecs
