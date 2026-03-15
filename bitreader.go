@@ -10,6 +10,7 @@ import (
 	"github.com/klauspost/stdgozstd/internal/le"
 )
 
+// bitReader reads bits from a reverse bitstream (LSB-first, read from end).
 type bitReader struct {
 	in       []byte
 	value    uint64

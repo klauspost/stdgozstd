@@ -23,6 +23,7 @@ type Reader struct {
 	initialized  bool
 }
 
+// ensureInit lazily initializes the Reader on first use.
 func (z *Reader) ensureInit() {
 	if z.initialized {
 		return

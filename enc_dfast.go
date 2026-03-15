@@ -4,6 +4,7 @@
 
 package zstd
 
+// Hash table parameters for the double-fast encoder.
 const (
 	dFastLongTableBits = 17
 	dFastLongTableSize = 1 << dFastLongTableBits
@@ -14,11 +15,13 @@ const (
 	dFastShortLen       = 5
 )
 
+// doubleFastEncoder implements the double-fast encoder (levels 3-4).
 type doubleFastEncoder struct {
 	fastEncoder
 	longTable [dFastLongTableSize]tableEntry
 }
 
+// encode compresses src into blk using the double-fast algorithm with history.
 func (e *doubleFastEncoder) encode(blk *blockEnc, src []byte) {
 	const (
 		inputMargin            = 8 + 2
@@ -254,6 +257,7 @@ encodeLoop:
 	blk.recentOffsets[1] = uint32(offset2)
 }
 
+// encodeNoHist compresses src into blk without preserving history between calls.
 func (e *doubleFastEncoder) encodeNoHist(blk *blockEnc, src []byte) {
 	const (
 		inputMargin            = 8 + 2
@@ -469,6 +473,7 @@ encodeLoop:
 	}
 }
 
+// reset prepares the encoder for a new stream, optionally loading a dictionary.
 func (e *doubleFastEncoder) reset(d *dict, singleBlock bool) {
 	e.fastEncoder.reset(d, singleBlock)
 	if d == nil {

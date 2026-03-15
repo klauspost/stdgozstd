@@ -25,6 +25,9 @@ func FuzzRoundTrip(f *testing.F) {
 		if len(data) > 0 {
 			_ = w.SetLevel(int(data[0] % BestCompression))
 		}
+		// We disable CRC for the truncation tests to be more effective.
+		// Otherwise CRC will always be missing.
+		w.SetCRC(false)
 		compressed = w.AppendCompress(compressed[:0], data)
 
 		_ = r.Reset(bytes.NewReader(compressed))
@@ -35,12 +38,43 @@ func FuzzRoundTrip(f *testing.F) {
 		if !bytes.Equal(got, data) {
 			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(got), len(data))
 		}
+		// Test Byte interface.
 		got, err = r.AppendDecompress(got[:0], compressed)
 		if err != nil {
 			t.Fatalf("AppendDecompress: %v", err)
 		}
 		if !bytes.Equal(got, data) {
 			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(got), len(data))
+		}
+
+		// Test WriteTo.
+		clear(got)
+		dst := bytes.NewBuffer(got[:0])
+		_ = r.Reset(bytes.NewReader(compressed))
+		n, err := r.WriteTo(dst)
+		if err != nil {
+			t.Fatalf("WriteTo: %v", err)
+		}
+		if n != int64(dst.Len()) {
+			t.Fatalf("WriteTo: got %d bytes, want %d", n, dst.Len())
+		}
+		if !bytes.Equal(dst.Bytes(), data) {
+			t.Fatalf("WriteTo mismatch: got %d bytes, want %d", len(dst.Bytes()), len(data))
+		}
+
+		// Test that truncated input always fails.
+		if len(compressed) < 2 {
+			return
+		}
+		_, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
+		if err == nil {
+			t.Fatal("expected error from AppendDecompress due to truncated input")
+		}
+		if err = r.Reset(bytes.NewReader(compressed[:len(compressed)/2])); err == nil {
+			_, err = r.WriteTo(io.Discard)
+			if err == nil {
+				t.Fatal("expected error from WriteTo due to truncated input")
+			}
 		}
 	})
 }
@@ -108,6 +142,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 		w.SetLowMemory(lowMem)
 		w.Reset(&buf)
 		_, _ = w.Write(data[:split])
+		_ = w.Flush()
 		_, _ = w.Write(data[split:])
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
@@ -120,6 +155,37 @@ func FuzzStreamRoundTrip(f *testing.F) {
 		}
 		if !bytes.Equal(got, data) {
 			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(got), len(data))
+		}
+
+		// Test WriteTo.
+		compressed := buf.Bytes()
+		clear(got)
+		dst := bytes.NewBuffer(got[:0])
+		_ = r.Reset(bytes.NewReader(compressed))
+		n, err := r.WriteTo(dst)
+		if err != nil {
+			t.Fatalf("WriteTo: %v", err)
+		}
+		if n != int64(dst.Len()) {
+			t.Fatalf("WriteTo: got %d bytes, want %d", n, dst.Len())
+		}
+		if !bytes.Equal(dst.Bytes(), data) {
+			t.Fatalf("WriteTo mismatch: got %d bytes, want %d", len(dst.Bytes()), len(data))
+		}
+
+		// Test that truncated input always fails.
+		if len(compressed) < 2 {
+			return
+		}
+		_, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
+		if err == nil {
+			t.Fatal("expected error from AppendDecompress due to truncated input")
+		}
+		if err = r.Reset(bytes.NewReader(compressed[:len(compressed)/2])); err == nil {
+			_, err = r.WriteTo(io.Discard)
+			if err == nil {
+				t.Fatal("expected error from WriteTo due to truncated input")
+			}
 		}
 	})
 }

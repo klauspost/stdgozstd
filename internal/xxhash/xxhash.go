@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+// Package xxhash implements the 64-bit xxHash algorithm (XXH64).
 package xxhash
 
 import (
@@ -9,6 +10,7 @@ import (
 	"math/bits"
 )
 
+// xxHash64 prime constants.
 const (
 	xxhPrime64c1 = 0x9e3779b185ebca87
 	xxhPrime64c2 = 0xc2b2ae3d27d4eb4f
@@ -25,6 +27,7 @@ type Digest struct {
 	cnt int       // number of bytes in buffer
 }
 
+// New returns a new Digest computing the xxHash-64 checksum.
 func New() *Digest {
 	var d Digest
 	d.Reset()
@@ -51,7 +54,10 @@ func (xh *Digest) Reset() {
 	xh.cnt = 0
 }
 
-func (d *Digest) Size() int      { return 8 }
+// Size returns the number of bytes Sum will append.
+func (d *Digest) Size() int { return 8 }
+
+// BlockSize returns the hash's underlying block size.
 func (d *Digest) BlockSize() int { return 32 }
 
 // update adds a buffer to the has.
@@ -88,17 +94,20 @@ func (xh *Digest) update(b []byte) {
 	}
 }
 
+// Write adds b to the running hash.
 func (d *Digest) Write(b []byte) (n int, err error) {
 	d.update(b)
 	return len(b), nil
 }
 
+// Sum appends the current hash to b and returns the resulting slice.
 func (d *Digest) Sum(b []byte) []byte {
 	s := d.Sum64()
 	return append(b, byte(s>>56), byte(s>>48), byte(s>>40), byte(s>>32),
 		byte(s>>24), byte(s>>16), byte(s>>8), byte(s))
 }
 
+// Sum64 returns the current 64-bit hash value.
 func (xh *Digest) Sum64() uint64 {
 	var h64 uint64
 	if xh.len < 32 {

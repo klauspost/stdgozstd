@@ -9,6 +9,7 @@ import (
 	"math/bits"
 )
 
+// frameHeader represents the zstd frame header fields.
 type frameHeader struct {
 	ContentSize   uint64
 	WindowSize    uint32
@@ -17,6 +18,7 @@ type frameHeader struct {
 	DictID        uint32
 }
 
+// maxHeaderSize is the maximum serialized frame header size in bytes.
 const maxHeaderSize = 14
 
 // appendTo serializes the frame header to dst.
@@ -93,6 +95,7 @@ func (f frameHeader) appendTo(dst []byte) []byte {
 	return dst
 }
 
+// blockHeader is the 3-byte block header packed into a uint32.
 type blockHeader uint32
 
 // setLast marks this as the last block in the frame.
@@ -122,6 +125,7 @@ func (h blockHeader) appendTo(b []byte) []byte {
 	return append(b, uint8(h), uint8(h>>8), uint8(h>>16))
 }
 
+// literalsHeader encodes the literals section header as a packed uint64.
 type literalsHeader uint64
 
 // setType sets the literals block type.
