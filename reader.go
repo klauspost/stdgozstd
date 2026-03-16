@@ -18,6 +18,7 @@ type Reader struct {
 	dicts        map[uint32]*dict
 	decodedCount uint64
 	inFrame      bool
+	frameSeen    bool
 	err          error
 	initialized  bool
 }
@@ -58,6 +59,7 @@ func (z *Reader) Reset(r io.Reader) error {
 	z.rw.r = r
 	z.buf = nil
 	z.inFrame = false
+	z.frameSeen = false
 	z.err = nil
 	z.decodedCount = 0
 	z.frame.history.reset()
@@ -90,12 +92,17 @@ func (z *Reader) Read(p []byte) (int, error) {
 					if written > 0 {
 						return written, nil
 					}
+					if !z.frameSeen {
+						z.err = &ErrCorrupted{msg: "empty input", err: io.ErrUnexpectedEOF}
+						return 0, z.err
+					}
 					z.err = io.EOF
 					return 0, io.EOF
 				}
 				z.err = err
 				return written, err
 			}
+			z.frameSeen = true
 			z.inFrame = true
 			z.decodedCount = 0
 			z.frame.history.reset()
@@ -176,14 +183,19 @@ func (z *Reader) AppendDecompress(dst, src []byte) ([]byte, error) {
 		return nil, ErrDecoderClosed
 	}
 	z.frame.bBuf = byteBuf(src)
+	var frameSeen bool
 	for {
 		err := z.frame.reset(&z.frame.bBuf)
 		if err == io.EOF {
+			if !frameSeen {
+				return dst, &ErrCorrupted{msg: "empty input", err: io.ErrUnexpectedEOF}
+			}
 			return dst, nil
 		}
 		if err != nil {
 			return dst, err
 		}
+		frameSeen = true
 		z.frame.history.reset()
 
 		if z.frame.DictionaryID != 0 {
@@ -276,11 +288,16 @@ func (z *Reader) WriteTo(w io.Writer) (int64, error) {
 			err := z.frame.reset(&z.rw)
 			if err != nil {
 				if err == io.EOF {
+					if !z.frameSeen {
+						z.err = &ErrCorrupted{msg: "empty input", err: io.ErrUnexpectedEOF}
+						return written, z.err
+					}
 					return written, nil
 				}
 				z.err = err
 				return written, err
 			}
+			z.frameSeen = true
 			z.inFrame = true
 			z.decodedCount = 0
 			z.frame.history.reset()

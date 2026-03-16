@@ -402,7 +402,7 @@ func (w *Writer) Close() error {
 //	frames = w.AppendCompress(part1, frames)
 //	frames = w.AppendCompress(part2, frames)
 //
-// If src is nil or empty, AppendTo returns dst unchanged.
+// If src is nil or empty, a minimal valid frame is appended to dst.
 //
 // AppendTo must not be called concurrently with other Writer methods, but
 // successive calls on the same Writer are safe without Reset.
@@ -441,13 +441,7 @@ func (w *Writer) nextBlock(final bool) error {
 		return fmt.Errorf("block > maxStoreBlockSize")
 	}
 	if !w.headerWritten {
-		if final && len(w.filling) == 0 {
-			w.headerWritten = true
-			w.fullFrameWritten = true
-			w.eofWritten = true
-			return nil
-		}
-		if final && len(w.filling) > 0 {
+		if final {
 			var current []byte
 			current = w.encodeAll(w.enc, w.filling, current)
 			var n2 int
@@ -525,7 +519,19 @@ func (w *Writer) nextBlock(final bool) error {
 // encodeAll compresses src into a single frame appended to dst.
 func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
 	if len(src) == 0 {
-		return dst
+		fh := frameHeader{
+			ContentSize:   0,
+			WindowSize:    MinWindowSize,
+			SingleSegment: true,
+			Checksum:      false,
+			DictID:        0,
+		}
+		dst = fh.appendTo(dst)
+		var blk blockHeader
+		blk.setSize(0)
+		blk.setType(blockTypeRaw)
+		blk.setLast(true)
+		return blk.appendTo(dst)
 	}
 
 	single := len(src) <= w.wndSize && len(src) > MinWindowSize
