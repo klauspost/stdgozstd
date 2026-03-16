@@ -4,6 +4,7 @@
 
 package zstd
 
+// Hash table parameters for the better encoder.
 const (
 	betterLongTableBits = 19
 	betterLongTableSize = 1 << betterLongTableBits
@@ -18,17 +19,20 @@ const (
 	betterShortLen       = 5
 )
 
+// prevEntry stores current and previous hash table offsets for two-deep matching.
 type prevEntry struct {
 	offset int32
 	prev   int32
 }
 
+// betterFastEncoder implements the better encoder (levels 5-7).
 type betterFastEncoder struct {
 	encBase
 	table     [betterShortTableSize]tableEntry
 	longTable [betterLongTableSize]prevEntry
 }
 
+// encode compresses src into blk using the better algorithm with history.
 func (e *betterFastEncoder) encode(blk *blockEnc, src []byte) {
 	const (
 		inputMargin            = 8 + 2
@@ -365,11 +369,13 @@ encodeLoop:
 	blk.recentOffsets[1] = uint32(offset2)
 }
 
+// encodeNoHist compresses src into blk without preserving history between calls.
 func (e *betterFastEncoder) encodeNoHist(blk *blockEnc, src []byte) {
 	e.ensureHist(len(src))
 	e.encode(blk, src)
 }
 
+// reset prepares the encoder for a new stream, optionally loading a dictionary.
 func (e *betterFastEncoder) reset(d *dict, singleBlock bool) {
 	e.resetBase(d, singleBlock)
 	if d == nil {

@@ -6,17 +6,21 @@ package zstd
 
 import "io"
 
+// seq holds a single encoded sequence (literal length, match length, offset).
 type seq struct {
-	litLen   uint32
-	matchLen uint32
-	offset   uint32
+	litLen                 uint32
+	matchLen               uint32
+	offset                 uint32
 	llCode, mlCode, ofCode uint8
 }
 
+// seqVals is a placeholder for decoded sequence values.
 type seqVals struct{}
 
+// seqCompMode identifies the compression mode for a sequence section FSE table.
 type seqCompMode uint8
 
+// Sequence compression modes as defined in the zstd specification.
 const (
 	compModePredefined seqCompMode = iota
 	compModeRLE
@@ -24,6 +28,7 @@ const (
 	compModeRepeat
 )
 
+// sequenceDec decodes one sequence component (litLen, offset, or matchLen).
 type sequenceDec struct {
 	fse    *fseDecoder
 	state  fseState
@@ -39,6 +44,7 @@ func (s *sequenceDec) init(br *bitReader) error {
 	return nil
 }
 
+// sequenceDecs holds the three sequence decoders and their shared state.
 type sequenceDecs struct {
 	litLengths   sequenceDec
 	offsets      sequenceDec
@@ -49,8 +55,8 @@ type sequenceDecs struct {
 	out          []byte
 	nSeqs        int
 	br           *bitReader
-	windowSize int
-	maxBits    uint8
+	windowSize   int
+	maxBits      uint8
 }
 
 // initialize prepares all three sequence decoders for decoding.
@@ -257,8 +263,10 @@ func (s *sequenceDecs) decodeSync(hist []byte) error {
 	return br.close()
 }
 
+// bitMask maps bit count to a 16-bit mask used in FSE state transitions.
 var bitMask [16]uint16
 
+// init populates the bitMask lookup table.
 func init() {
 	for i := range bitMask[:] {
 		bitMask[i] = uint16((1 << uint(i)) - 1)

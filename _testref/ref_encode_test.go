@@ -26,30 +26,35 @@ func TestRefLiteAppendToLevels(t *testing.T) {
 }
 
 func TestRefLiteEncodeEmpty(t *testing.T) {
-	// AppendTo with nil returns nil.
 	w := zstd.NewWriter(nil)
 	compressed := w.AppendCompress(nil, nil)
-	if len(compressed) != 0 {
-		t.Fatalf("expected empty, got %d bytes", len(compressed))
+	if len(compressed) == 0 {
+		t.Fatal("expected non-empty frame for nil input")
+	}
+	got := refDecode(t, compressed)
+	if len(got) != 0 {
+		t.Fatalf("expected empty decode, got %d bytes", len(got))
 	}
 
 	// Streaming: Write nothing, Close.
 	var buf bytes.Buffer
 	w.Reset(&buf)
 	w.Close()
-	// Empty stream produces no output in lite.
-	if buf.Len() > 0 {
-		dec, err := ref.NewReader(nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer dec.Close()
-		got, err := dec.DecodeAll(buf.Bytes(), nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+	if buf.Len() == 0 {
+		t.Fatal("expected non-empty frame from streaming empty close")
+	}
+	got = refDecode(t, buf.Bytes())
+	if len(got) != 0 {
+		t.Fatalf("expected empty decode from stream, got %d bytes", len(got))
+	}
+}
+
+func TestRefLiteEncodeEmptyAllLevels(t *testing.T) {
+	for level := 0; level <= 9; level++ {
+		compressed := liteEncode(t, nil, level)
+		got := refDecode(t, compressed)
 		if len(got) != 0 {
-			t.Errorf("expected empty decode, got %d bytes", len(got))
+			t.Errorf("level %d: expected empty decode, got %d bytes", level, len(got))
 		}
 	}
 }

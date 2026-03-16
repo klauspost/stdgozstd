@@ -4,11 +4,12 @@
 
 package zstd
 
-
+// tablelogAbsoluteMax is the maximum FSE table log allowed by the zstd spec.
 const (
 	tablelogAbsoluteMax = 9
 )
 
+// FSE decoder size limits derived from tablelogAbsoluteMax.
 const (
 	maxMemoryUsage = tablelogAbsoluteMax + 2
 	maxTableLog    = maxMemoryUsage - 2
@@ -18,6 +19,7 @@ const (
 	maxSymbolValue = 255
 )
 
+// fseDecoder holds a decoded FSE table for sequence decompression.
 type fseDecoder struct {
 	dt             [maxTablesize]decSymbol
 	symbolLen      uint16
@@ -149,6 +151,7 @@ func (s *fseDecoder) readNCount(b *byteReader, maxSymbol uint16) error {
 	return s.buildDtable()
 }
 
+// decSymbol packs FSE decoder fields (nbBits, addBits, newState, baseline) into a uint64.
 type decSymbol uint64
 
 // newDecSymbol packs decoder fields into a single uint64.
@@ -156,11 +159,20 @@ func newDecSymbol(nbits, addBits uint8, newState uint16, baseline uint32) decSym
 	return decSymbol(nbits) | (decSymbol(addBits) << 8) | (decSymbol(newState) << 16) | (decSymbol(baseline) << 32)
 }
 
-func (d decSymbol) nbBits() uint8       { return uint8(d) }        // nbBits returns the number of bits to read.
-func (d decSymbol) addBits() uint8      { return uint8(d >> 8) }   // addBits returns extra bits count.
-func (d decSymbol) newState() uint16    { return uint16(d >> 16) } // newState returns the next FSE state base.
-func (d decSymbol) baselineInt() int    { return int(d >> 32) }    // baselineInt returns the baseline value.
-func (d decSymbol) final() (int, uint8) { return d.baselineInt(), d.addBits() } // final returns baseline and extra bits.
+// nbBits returns the number of bits to read.
+func (d decSymbol) nbBits() uint8 { return uint8(d) }
+
+// addBits returns the extra bits count.
+func (d decSymbol) addBits() uint8 { return uint8(d >> 8) }
+
+// newState returns the next FSE state base.
+func (d decSymbol) newState() uint16 { return uint16(d >> 16) }
+
+// baselineInt returns the baseline value.
+func (d decSymbol) baselineInt() int { return int(d >> 32) }
+
+// final returns the baseline value and extra bits count.
+func (d decSymbol) final() (int, uint8) { return d.baselineInt(), d.addBits() }
 
 // setNBits sets the number of bits field.
 func (d *decSymbol) setNBits(nBits uint8) {
@@ -221,6 +233,7 @@ func (s *fseDecoder) transform(t []baseOffset) error {
 	return nil
 }
 
+// fseState tracks the current state during FSE-driven sequence decoding.
 type fseState struct {
 	dt    []decSymbol
 	state decSymbol

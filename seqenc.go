@@ -6,6 +6,7 @@ package zstd
 
 import "math/bits"
 
+// seqCoders holds the three FSE encoder pairs (current + previous) for sequences.
 type seqCoders struct {
 	llEnc, ofEnc, mlEnc    *fseEncoder
 	llPrev, ofPrev, mlPrev *fseEncoder
@@ -38,6 +39,7 @@ func highBit(val uint32) (n uint32) {
 	return uint32(bits.Len32(val) - 1)
 }
 
+// llCodeTable maps literal lengths 0-63 to their FSE codes.
 var llCodeTable = [64]byte{0, 1, 2, 3, 4, 5, 6, 7,
 	8, 9, 10, 11, 12, 13, 14, 15,
 	16, 16, 17, 17, 18, 18, 19, 19,
@@ -47,8 +49,10 @@ var llCodeTable = [64]byte{0, 1, 2, 3, 4, 5, 6, 7,
 	24, 24, 24, 24, 24, 24, 24, 24,
 	24, 24, 24, 24, 24, 24, 24, 24}
 
+// maxLLCode is the maximum literal length FSE code.
 const maxLLCode = 35
 
+// llBitsTable maps literal length codes to extra bit counts.
 var llBitsTable = [maxLLCode + 1]byte{
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,
@@ -65,6 +69,7 @@ func llCode(litLength uint32) uint8 {
 	return uint8(highBit(litLength)) + llDeltaCode
 }
 
+// mlCodeTable maps match lengths 0-127 to their FSE codes.
 var mlCodeTable = [128]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 	16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
 	32, 32, 33, 33, 34, 34, 35, 35, 36, 36, 36, 36, 37, 37, 37, 37,
@@ -74,8 +79,10 @@ var mlCodeTable = [128]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
 	42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42,
 	42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42, 42}
 
+// maxMLCode is the maximum match length FSE code.
 const maxMLCode = 52
 
+// mlBitsTable maps match length codes to extra bit counts.
 var mlBitsTable = [maxMLCode + 1]byte{
 	0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0,

@@ -6,6 +6,7 @@ package zstd
 
 import "math"
 
+// Hash table parameters for the best encoder.
 const (
 	bestLongTableBits = 22
 	bestLongTableSize = 1 << bestLongTableBits
@@ -20,6 +21,7 @@ const (
 	bestShortLen       = 4
 )
 
+// match represents a candidate match during best-level encoding.
 type match struct {
 	offset int32
 	s      int32
@@ -28,6 +30,7 @@ type match struct {
 	est    int32
 }
 
+// highScore is the initial "no match" cost sentinel.
 const highScore = maxMatchLength * 8
 
 // shannonEntropyBits returns the Shannon entropy of b in bits.
@@ -71,12 +74,14 @@ func (m *match) estBits(bitsPerByte int32) {
 	}
 }
 
+// bestFastEncoder implements the highest-compression encoder (levels 8-9).
 type bestFastEncoder struct {
 	encBase
 	table     [bestShortTableSize]prevEntry
 	longTable [bestLongTableSize]prevEntry
 }
 
+// encode compresses src into blk using the best algorithm with history.
 func (e *bestFastEncoder) encode(blk *blockEnc, src []byte) {
 	const (
 		inputMargin            = 8 + 4
@@ -373,11 +378,13 @@ encodeLoop:
 	blk.recentOffsets[2] = uint32(offset3)
 }
 
+// encodeNoHist compresses src into blk without preserving history between calls.
 func (e *bestFastEncoder) encodeNoHist(blk *blockEnc, src []byte) {
 	e.ensureHist(len(src))
 	e.encode(blk, src)
 }
 
+// reset prepares the encoder for a new stream, optionally loading a dictionary.
 func (e *bestFastEncoder) reset(d *dict, singleBlock bool) {
 	e.resetBase(d, singleBlock)
 	if d == nil {

@@ -31,7 +31,7 @@ func FuzzRefEncoderCompat(f *testing.F) {
 			level = -level
 		}
 		level = level % 10
-		if len(data) == 0 || len(data) > 1<<20 {
+		if len(data) > 1<<20 {
 			return
 		}
 		_ = w.SetLevel(level)
@@ -54,7 +54,7 @@ func FuzzRefDecoderCompat(f *testing.F) {
 	levels := []ref.EncoderLevel{ref.SpeedFastest, ref.SpeedDefault, ref.SpeedBetterCompression, ref.SpeedBestCompression}
 	encs := make([]*ref.Encoder, len(levels))
 	for i, l := range levels {
-		enc, err := ref.NewWriter(nil, ref.WithEncoderLevel(l))
+		enc, err := ref.NewWriter(nil, ref.WithEncoderLevel(l), ref.WithZeroFrames(true))
 		if err != nil {
 			f.Fatal(err)
 		}
@@ -71,7 +71,7 @@ func FuzzRefDecoderCompat(f *testing.F) {
 		}
 		enc := encs[levelHint%len(encs)]
 
-		if len(data) == 0 || len(data) > 1<<20 {
+		if len(data) > 1<<20 {
 			return
 		}
 
@@ -108,7 +108,8 @@ func FuzzRefBothDecoders(f *testing.F) {
 	liteDec.SetMaxWindowSize(maxWindow)
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		if len(data) > 1<<16 {
+		// Empty input: parent accepts (returns nil), lite rejects (ErrCorrupted).
+		if len(data) == 0 || len(data) > 1<<16 {
 			return
 		}
 

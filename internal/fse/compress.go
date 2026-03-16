@@ -9,6 +9,7 @@ import (
 	"fmt"
 )
 
+// Compress returns the FSE-compressed form of in.
 func Compress(in []byte, s *Scratch) ([]byte, error) {
 	if len(in) <= 1 {
 		return nil, ErrIncompressible
@@ -53,12 +54,14 @@ func Compress(in []byte, s *Scratch) ([]byte, error) {
 	return s.Out, nil
 }
 
+// cState tracks the current FSE compression state.
 type cState struct {
 	bw         *bitWriter
 	stateTable []uint16
 	state      uint16
 }
 
+// init sets up the compression state with the first symbol.
 func (c *cState) init(bw *bitWriter, ct *cTable, tableLog uint8, first symbolTransform) {
 	c.bw = bw
 	c.stateTable = ct.stateTable
@@ -68,6 +71,7 @@ func (c *cState) init(bw *bitWriter, ct *cTable, tableLog uint8, first symbolTra
 	c.state = c.stateTable[lu]
 }
 
+// encode encodes a symbol with non-zero bit count.
 func (c *cState) encode(symbolTT symbolTransform) {
 	nbBitsOut := (uint32(c.state) + symbolTT.deltaNbBits) >> 16
 	dstState := int32(c.state>>(nbBitsOut&15)) + symbolTT.deltaFindState
@@ -75,6 +79,7 @@ func (c *cState) encode(symbolTT symbolTransform) {
 	c.state = c.stateTable[dstState]
 }
 
+// encodeZero encodes a symbol that may have zero output bits.
 func (c *cState) encodeZero(symbolTT symbolTransform) {
 	nbBitsOut := (uint32(c.state) + symbolTT.deltaNbBits) >> 16
 	dstState := int32(c.state>>(nbBitsOut&15)) + symbolTT.deltaFindState
@@ -82,12 +87,14 @@ func (c *cState) encodeZero(symbolTT symbolTransform) {
 	c.state = c.stateTable[dstState]
 }
 
+// flush writes the final state bits to the bitstream.
 func (c *cState) flush(tableLog uint8) {
 	c.bw.flush32()
 	c.bw.addBits16NC(c.state, tableLog)
 	c.bw.flush()
 }
 
+// compress encodes src using FSE and writes the result to s.Out.
 func (s *Scratch) compress(src []byte) error {
 	if len(src) <= 2 {
 		return errors.New("compress: src too small")
@@ -162,6 +169,7 @@ func (s *Scratch) compress(src []byte) error {
 	return nil
 }
 
+// writeCount serializes the normalized symbol counts into s.Out.
 func (s *Scratch) writeCount() error {
 	var (
 		tableLog  = s.actualTableLog
@@ -259,17 +267,20 @@ func (s *Scratch) writeCount() error {
 	return nil
 }
 
+// symbolTransform holds the encoding parameters for a single symbol.
 type symbolTransform struct {
 	deltaFindState int32
 	deltaNbBits    uint32
 }
 
+// cTable is the compression table built from normalized symbol counts.
 type cTable struct {
 	tableSymbol []byte
 	stateTable  []uint16
 	symbolTT    []symbolTransform
 }
 
+// allocCtable ensures the compression table slices have sufficient capacity.
 func (s *Scratch) allocCtable() {
 	tableSize := 1 << s.actualTableLog
 	if cap(s.ct.tableSymbol) < tableSize {
@@ -288,6 +299,7 @@ func (s *Scratch) allocCtable() {
 	s.ct.symbolTT = s.ct.symbolTT[:256]
 }
 
+// buildCTable builds the FSE compression table from normalized counts.
 func (s *Scratch) buildCTable() error {
 	tableSize := uint32(1 << s.actualTableLog)
 	highThreshold := tableSize - 1
@@ -383,6 +395,7 @@ func (s *Scratch) buildCTable() error {
 	return nil
 }
 
+// countSimple counts symbol frequencies and returns the highest count.
 func (s *Scratch) countSimple(in []byte) (max int) {
 	for _, v := range in {
 		s.count[v]++
@@ -401,6 +414,7 @@ func (s *Scratch) countSimple(in []byte) (max int) {
 	return int(m)
 }
 
+// minTableLog returns the minimum table log needed for the input.
 func (s *Scratch) minTableLog() uint8 {
 	minBitsSrc := highBits(uint32(s.br.remain()-1)) + 1
 	minBitsSymbols := highBits(uint32(s.symbolLen-1)) + 2
@@ -410,6 +424,7 @@ func (s *Scratch) minTableLog() uint8 {
 	return uint8(minBitsSymbols)
 }
 
+// optimalTableLog selects and stores the best table log for the input.
 func (s *Scratch) optimalTableLog() {
 	tableLog := s.TableLog
 	minBits := s.minTableLog()
@@ -429,8 +444,10 @@ func (s *Scratch) optimalTableLog() {
 	s.actualTableLog = tableLog
 }
 
+// rtbTable provides thresholds for rounding small probability counts.
 var rtbTable = [...]uint32{0, 473195, 504333, 520860, 550000, 700000, 750000, 830000}
 
+// normalizeCount scales raw symbol counts to fit the target table size.
 func (s *Scratch) normalizeCount() error {
 	var (
 		tableLog          = s.actualTableLog
@@ -476,6 +493,7 @@ func (s *Scratch) normalizeCount() error {
 	return nil
 }
 
+// normalizeCount2 is the fallback count normalizer for skewed distributions.
 func (s *Scratch) normalizeCount2() error {
 	const notYetAssigned = -2
 	var (

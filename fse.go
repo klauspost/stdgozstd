@@ -10,6 +10,7 @@ import (
 	"sync"
 )
 
+// Predefined FSE tables and symbol metadata used by encoders and decoders.
 var (
 	fsePredef      [3]fseDecoder
 	fsePredefEnc   [3]fseEncoder
@@ -18,8 +19,10 @@ var (
 	bitTables      = [3][]byte{tableLiteralLengths: llBitsTable[:], tableOffsets: nil, tableMatchLengths: mlBitsTable[:]}
 )
 
+// tableIndex selects one of the three sequence FSE tables.
 type tableIndex uint8
 
+// Sequence table indices and maximum symbol counts.
 const (
 	tableLiteralLengths tableIndex = 0
 	tableOffsets        tableIndex = 1
@@ -30,6 +33,7 @@ const (
 	maxMatchLengthSymbol   = 52
 )
 
+// baseOffset pairs a baseline value with extra bits for FSE decoding.
 type baseOffset struct {
 	baseLine uint32
 	addBits  uint8
@@ -57,6 +61,7 @@ func tableStep(tableSize uint32) uint32 {
 	return (tableSize >> 1) + (tableSize >> 3) + 3
 }
 
+// predef guards one-time initialization of the predefined FSE tables.
 var predef sync.Once
 
 // initPredefined initializes the predefined FSE tables (once).
