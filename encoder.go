@@ -130,14 +130,6 @@ func (e *encBase) resetBase(d *dict, singleBlock bool) {
 		e.crc.Reset()
 	}
 	e.blk.dictLitEnc = nil
-	if d != nil {
-		low := e.lowMem
-		if singleBlock {
-			e.lowMem = true
-		}
-		e.ensureHist(len(d.content) + maxCompressedBlockSize)
-		e.lowMem = low
-	}
 
 	// Offset current position so everything will be out of reach.
 	// If above reset line, history will be purged.
@@ -145,7 +137,17 @@ func (e *encBase) resetBase(d *dict, singleBlock bool) {
 		e.cur += e.maxMatchOff + int32(len(e.hist))
 	}
 	e.hist = e.hist[:0]
+
+	// Ensure buffer fits the current window. Must be after e.cur bump
+	// so len(e.hist) still reflects old history for proper invalidation.
+	e.ensureHist(int(e.maxMatchOff + maxCompressedBlockSize))
 	if d != nil {
+		low := e.lowMem
+		if singleBlock {
+			e.lowMem = true
+		}
+		e.ensureHist(len(d.content) + maxCompressedBlockSize)
+		e.lowMem = low
 		for i, off := range d.offsets {
 			e.blk.recentOffsets[i] = uint32(off)
 			e.blk.prevRecentOffsets[i] = e.blk.recentOffsets[i]
