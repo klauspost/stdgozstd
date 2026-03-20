@@ -6,6 +6,7 @@ package zstd
 
 import (
 	"fmt"
+	"io"
 	"math/bits"
 
 	"github.com/klauspost/stdgozstd/internal/le"
@@ -22,6 +23,12 @@ type encoder interface {
 	windowSize(size int64) int32
 	reset(d *dict, singleBlock bool)
 	configure(maxMatchOff, bufferReset int32, lowMem bool)
+}
+
+// rawBlockWriter is implemented by encoders that emit uncompressed blocks directly.
+type rawBlockWriter interface {
+	writeRaw(w io.Writer, src []byte, last bool) (int, error)
+	appendRaw(dst, src []byte, last bool) []byte
 }
 
 // encBase contains shared functionality for encoders.
@@ -206,4 +213,77 @@ func matchLen(a, b []byte) (n int) {
 		n++
 	}
 	return n
+}
+
+// rawEncoder implements the encoder interface for level 0 (no compression).
+// It writes raw blocks directly, without history buffers or hash tables.
+type rawEncoder struct {
+	crc         *xxhash.Digest
+	tmp         [8]byte
+	maxMatchOff int32
+}
+
+// encode is a no-op; raw blocks are written directly.
+func (e *rawEncoder) encode(*blockEnc, []byte) {}
+
+// encodeNoHist is a no-op; raw blocks are written directly.
+func (e *rawEncoder) encodeNoHist(*blockEnc, []byte) {}
+
+// block is unused; rawEncoder bypasses blockEnc.
+func (e *rawEncoder) block() *blockEnc { return nil }
+
+// checksum returns the running xxhash digest.
+func (e *rawEncoder) checksum() *xxhash.Digest { return e.crc }
+
+// configure stores the maximum match offset for the frame header window size.
+func (e *rawEncoder) configure(maxMatchOff, _ int32, _ bool) { e.maxMatchOff = maxMatchOff }
+
+// windowSize returns the window size for the frame header.
+func (e *rawEncoder) windowSize(size int64) int32 {
+	if size > 0 && size < int64(e.maxMatchOff) {
+		return max(int32(1)<<uint(bits.Len(uint(size))), 1024)
+	}
+	return e.maxMatchOff
+}
+
+// appendCRC appends the lower 4 bytes of the xxhash checksum to dst.
+func (e *rawEncoder) appendCRC(dst []byte) []byte {
+	crc := e.crc.Sum(e.tmp[:0])
+	dst = append(dst, crc[7], crc[6], crc[5], crc[4])
+	return dst
+}
+
+// reset initializes the checksum for a new frame.
+// The dict argument is ignored since raw blocks do not use dictionaries.
+func (e *rawEncoder) reset(_ *dict, _ bool) {
+	if e.crc == nil {
+		e.crc = xxhash.New()
+	} else {
+		e.crc.Reset()
+	}
+}
+
+// appendRaw appends a raw block (header + data) to dst.
+func (e *rawEncoder) appendRaw(dst, src []byte, last bool) []byte {
+	var bh blockHeader
+	bh.setLast(last)
+	bh.setSize(uint32(len(src)))
+	bh.setType(blockTypeRaw)
+	dst = bh.appendTo(dst)
+	return append(dst, src...)
+}
+
+// writeRaw writes a raw block (header + data) to w.
+func (e *rawEncoder) writeRaw(w io.Writer, src []byte, last bool) (int, error) {
+	var bh blockHeader
+	bh.setLast(last)
+	bh.setSize(uint32(len(src)))
+	bh.setType(blockTypeRaw)
+	hdr := bh.appendTo(e.tmp[:0])
+	n, err := w.Write(hdr)
+	if err != nil {
+		return n, err
+	}
+	n2, err := w.Write(src)
+	return n + n2, err
 }

@@ -21,33 +21,37 @@ const (
 )
 
 // encoderPools caches encoders by category to avoid repeated hash table allocation.
-var encoderPools [4]sync.Pool
+var encoderPools [5]sync.Pool
 
 // putEncoder returns an encoder to its pool for reuse.
 func putEncoder(enc encoder) {
 	switch enc.(type) {
-	case *fastEncoder:
+	case *rawEncoder:
 		encoderPools[0].Put(enc)
-	case *doubleFastEncoder:
+	case *fastEncoder:
 		encoderPools[1].Put(enc)
-	case *betterFastEncoder:
+	case *doubleFastEncoder:
 		encoderPools[2].Put(enc)
-	case *bestFastEncoder:
+	case *betterFastEncoder:
 		encoderPools[3].Put(enc)
+	case *bestFastEncoder:
+		encoderPools[4].Put(enc)
 	}
 }
 
-// encoderCategory maps a compression level to a pool index (0-3).
+// encoderCategory maps a compression level to a pool index (0-4).
 func encoderCategory(level int) int {
 	switch {
-	case level <= 2:
+	case level == 0:
 		return 0
-	case level <= 4:
+	case level <= 2:
 		return 1
-	case level <= 7:
+	case level <= 4:
 		return 2
-	default:
+	case level <= 7:
 		return 3
+	default:
+		return 4
 	}
 }
 
@@ -246,6 +250,10 @@ func (w *Writer) newEncoder() encoder {
 	}
 
 	switch {
+	case w.level == 0:
+		e := &rawEncoder{}
+		e.configure(maxOff, bufReset, w.lowMem)
+		return e
 	case w.level <= 2:
 		e := &fastEncoder{}
 		e.configure(maxOff, bufReset, w.lowMem)
@@ -412,14 +420,16 @@ func (w *Writer) AppendCompress(dst, src []byte) []byte {
 	if w.enc != nil {
 		var encCat int
 		switch w.enc.(type) {
-		case *fastEncoder:
+		case *rawEncoder:
 			encCat = 0
-		case *doubleFastEncoder:
+		case *fastEncoder:
 			encCat = 1
-		case *betterFastEncoder:
+		case *doubleFastEncoder:
 			encCat = 2
-		case *bestFastEncoder:
+		case *betterFastEncoder:
 			encCat = 3
+		case *bestFastEncoder:
+			encCat = 4
 		}
 		if encCat != cat {
 			putEncoder(w.enc)
@@ -478,6 +488,22 @@ func (w *Writer) nextBlock(final bool) error {
 
 	if w.eofWritten {
 		final = false
+	}
+
+	if raw, ok := w.enc.(rawBlockWriter); ok {
+		src := w.filling
+		w.nInput += int64(len(src))
+		if len(src) == 0 && !final {
+			return w.err
+		}
+		var n int
+		n, w.err = raw.writeRaw(w.w, src, final)
+		w.nWritten += int64(n)
+		if final {
+			w.eofWritten = true
+		}
+		w.filling = w.filling[:0]
+		return w.err
 	}
 
 	if len(w.filling) == 0 {
@@ -548,7 +574,20 @@ func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
 	}
 	dst = fh.appendTo(dst)
 
-	if len(src) <= w.blockSize {
+	if raw, ok := enc.(rawBlockWriter); ok {
+		enc.reset(nil, true)
+		if w.crc {
+			_, _ = enc.checksum().Write(src)
+		}
+		for len(src) > 0 {
+			todo := src
+			if len(todo) > maxCompressedBlockSize {
+				todo = todo[:maxCompressedBlockSize]
+			}
+			src = src[len(todo):]
+			dst = raw.appendRaw(dst, todo, len(src) == 0)
+		}
+	} else if len(src) <= w.blockSize {
 		enc.reset(w.dict, true)
 		if w.crc {
 			_, _ = enc.checksum().Write(src)

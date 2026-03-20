@@ -272,6 +272,60 @@ func TestWriterSetLevel(t *testing.T) {
 	}
 }
 
+func TestNoCompressionIsRaw(t *testing.T) {
+	src := bytes.Repeat([]byte("hello world! this is highly compressible data. "), 1000)
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	if err := w.SetLevel(NoCompression); err != nil {
+		t.Fatal(err)
+	}
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if buf.Len() < len(src) {
+		t.Errorf("NoCompression reduced size: src=%d compressed=%d", len(src), buf.Len())
+	}
+	r, err := NewReader(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("roundtrip mismatch")
+	}
+
+	// Also test AppendCompress path.
+	buf.Reset()
+	w2 := NewWriter(nil)
+	if err := w2.SetLevel(NoCompression); err != nil {
+		t.Fatal(err)
+	}
+	compressed := w2.AppendCompress(nil, src)
+	if len(compressed) < len(src) {
+		t.Errorf("AppendCompress NoCompression reduced size: src=%d compressed=%d", len(src), len(compressed))
+	}
+	r2, err := NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r2.Close()
+	got2, err := io.ReadAll(r2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got2, src) {
+		t.Fatal("AppendCompress roundtrip mismatch")
+	}
+}
+
 func TestWriterAppendCompress(t *testing.T) {
 	src := bytes.Repeat([]byte("encode all test data! "), 500)
 	w := NewWriter(nil)
