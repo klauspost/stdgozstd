@@ -120,39 +120,36 @@ func (w *Writer) SetLevel(level int) error {
 		return fmt.Errorf("zstd: invalid level %d", level)
 	}
 	w.level = level
+	w.blockSize = maxCompressedBlockSize
+	// These mirror zstd default window sizes at levels 1, 3 and 9.
 	switch level {
 	case 0:
 		w.wndSize = 0
-		w.blockSize = maxCompressedBlockSize
 	case 1:
-		w.wndSize = 4 << 20
-		w.blockSize = 1 << 16
+		w.wndSize = 2 << 20
 	case 2:
-		w.wndSize = 8 << 20
-		w.blockSize = 1 << 16
+		w.wndSize = 3 << 20
 	case 3:
 		w.wndSize = 4 << 20
-		w.blockSize = maxCompressedBlockSize
 	case 4:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
-	case 5, 6:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
+		w.wndSize = 4 << 20
+	case 5:
+		w.wndSize = 4 << 20
+	case 6:
+		w.wndSize = 5 << 20
 	case 7:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
+		w.wndSize = 6 << 20
 	case 8:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
+		w.wndSize = 7 << 20
 	case 9:
 		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
 	}
 	return nil
 }
 
 // SetWindowSize overrides the window size for compression.
+// This allows limiting memory usage both for compression and decompression.
+//
 // n must be in the range [MinWindowSize, MaxWindowSize].
 func (w *Writer) SetWindowSize(n int) error {
 	w.ensureInit()
