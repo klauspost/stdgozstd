@@ -500,15 +500,19 @@ func (w *Writer) nextBlock(final bool) error {
 	enc := w.enc
 	blk := enc.block()
 	blk.reset(nil)
-	enc.encode(blk, src)
 	blk.last = final
 	if final {
 		w.eofWritten = true
 	}
 
-	w.err = blk.encode(src, false, true)
-	if w.err != nil {
-		return w.err
+	if w.level == 0 {
+		blk.encodeRaw(src)
+	} else {
+		enc.encode(blk, src)
+		w.err = blk.encode(src, false, true)
+		if w.err != nil {
+			return w.err
+		}
 	}
 	_, w.err = w.w.Write(blk.output)
 	w.nWritten += int64(len(blk.output))
@@ -548,7 +552,22 @@ func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
 	}
 	dst = fh.appendTo(dst)
 
-	if len(src) <= w.blockSize {
+	if w.level == 0 {
+		enc.reset(nil, true)
+		if w.crc {
+			_, _ = enc.checksum().Write(src)
+		}
+		blk := enc.block()
+		for len(src) > 0 {
+			todo := src
+			if len(todo) > maxCompressedBlockSize {
+				todo = todo[:maxCompressedBlockSize]
+			}
+			src = src[len(todo):]
+			blk.last = len(src) == 0
+			dst = blk.encodeRawTo(dst, todo)
+		}
+	} else if len(src) <= w.blockSize {
 		enc.reset(w.dict, true)
 		if w.crc {
 			_, _ = enc.checksum().Write(src)
