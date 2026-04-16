@@ -38,8 +38,8 @@ const (
 	maxCompressedBlockSize      = 128 << 10
 	compressedBlockOverAlloc    = 16
 	maxCompressedBlockSizeAlloc = 128<<10 + compressedBlockOverAlloc
-	maxBlockSize = (1 << 21) - 1
-	maxMatchLen  = 131074
+	maxBlockSize                = (1 << 21) - 1
+	maxMatchLen                 = 131074
 )
 
 // Decoder object pools for reuse across blocks.
@@ -54,9 +54,8 @@ type blockDec struct {
 	dataStorage []byte
 	dst         []byte
 	literalBuf  []byte
-	WindowSize uint64
-	err        error
-	RLESize    uint32
+	WindowSize  uint64
+	RLESize     uint32
 	Type        blockType
 	Last        bool
 	lowMem      bool
@@ -164,9 +163,9 @@ func (b *blockDec) decodeBuf(hist *history) error {
 		}
 		return err
 	case blockTypeReserved:
-		return b.err
+		return errReservedBlockType
 	default:
-		panic("invalid block type")
+		return corruptedErrorf("invalid block type %d", b.Type)
 	}
 }
 

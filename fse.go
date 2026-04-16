@@ -103,15 +103,18 @@ func initPredefined() {
 			switch tableIndex(i) {
 			case tableLiteralLengths:
 				f.actualTableLog = 6
-				copy(f.norm[:], []int16{4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
+				copy(f.norm[:], []int16{
+					4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
 					2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
-					-1, -1, -1, -1})
+					-1, -1, -1, -1,
+				})
 				f.symbolLen = 36
 			case tableOffsets:
 				f.actualTableLog = 5
 				copy(f.norm[:], []int16{
 					1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
-					1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1})
+					1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1,
+				})
 				f.symbolLen = 29
 			case tableMatchLengths:
 				f.actualTableLog = 6
@@ -119,7 +122,8 @@ func initPredefined() {
 					1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
 					1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 					1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1,
-					-1, -1, -1, -1, -1})
+					-1, -1, -1, -1, -1,
+				})
 				f.symbolLen = 53
 			}
 			if err := f.buildDtable(); err != nil {

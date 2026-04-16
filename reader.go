@@ -5,6 +5,7 @@
 package zstd
 
 import (
+	"fmt"
 	"io"
 	"sync"
 )
@@ -276,10 +277,16 @@ func (z *Reader) Close() error {
 }
 
 // SetMaxWindowSize sets the maximum allowed window size for decoding.
-// The default is 128 MiB. The maximum is [MaxWindowSize] (512 MiB).
-func (z *Reader) SetMaxWindowSize(n int) {
+// The default is 128 MiB.
+//
+// n must be in the range [MinWindowSize, MaxWindowSize].
+func (z *Reader) SetMaxWindowSize(n int) error {
 	z.ensureInit()
+	if n < MinWindowSize || n > MaxWindowSize {
+		return fmt.Errorf("zstd: max window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
+	}
 	z.frame.o.maxWindowSize = n
+	return nil
 }
 
 // AddDict registers a dictionary for decompression.

@@ -188,12 +188,15 @@ func (w *Writer) AddDict(d *Dict) {
 }
 
 // SetRawDict registers raw bytes as a dictionary prefix.
-// The dictionary must be at least 8 bytes; shorter values are ignored.
+// The dictionary must be at least 8 bytes; shorter non-nil values are ignored.
 // Passing nil removes any previous dictionary.
 func (w *Writer) SetRawDict(b []byte) {
 	w.ensureInit()
-	if len(b) < 8 {
+	if b == nil {
 		w.dict = nil
+		return
+	}
+	if len(b) < 8 {
 		return
 	}
 	w.dict = &dict{content: b}

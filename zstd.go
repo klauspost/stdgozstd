@@ -59,8 +59,10 @@ func corruptedErrorf(format string, args ...any) *ErrCorrupted {
 	return &ErrCorrupted{msg: fmt.Sprintf(format, args...)}
 }
 
-const zstdMinMatch = 3            // minimum match length per the zstd specification
-const fcsUnknown = math.MaxUint64 // sentinel for unknown frame content size
+const (
+	zstdMinMatch = 3              // minimum match length per the zstd specification
+	fcsUnknown   = math.MaxUint64 // sentinel for unknown frame content size
+)
 
 // Parent zstd uses 30; fillBase in fse_predefined.go expects this.
 const maxOffsetBits = 30

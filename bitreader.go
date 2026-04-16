@@ -113,4 +113,3 @@ func (b *bitReader) close() error {
 	}
 	return nil
 }
-
