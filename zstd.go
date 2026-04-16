@@ -56,12 +56,26 @@ const fcsUnknown = math.MaxUint64 // sentinel for unknown frame content size
 // Parent zstd uses 30; fillBase in fse_predefined.go expects this.
 const maxOffsetBits = 30
 
+// ErrWindowSizeExceeded is returned when a frame or block requests
+// a window larger than the configured maximum.
+type ErrWindowSizeExceeded struct {
+	Allowed, Requested uint64
+}
+
+func (e *ErrWindowSizeExceeded) Error() string {
+	return fmt.Sprintf("window size exceeded (requested %d, allowed %d)", e.Requested, e.Allowed)
+}
+
+func (e *ErrWindowSizeExceeded) Is(target error) bool {
+	_, ok := target.(*ErrWindowSizeExceeded)
+	return ok
+}
+
 // Errors returned by the zstd encoder and decoder.
 var (
-	ErrWindowSizeExceeded = errors.New("window size exceeded")
-	ErrUnknownDictionary  = errors.New("unknown dictionary")
-	ErrDecoderClosed      = errors.New("decoder used after Close")
-	ErrEncoderClosed      = errors.New("encoder used after Close")
+	ErrUnknownDictionary = errors.New("unknown dictionary")
+	ErrDecoderClosed     = errors.New("decoder used after Close")
+	ErrEncoderClosed     = errors.New("encoder used after Close")
 )
 
 // Corruption sentinel errors returned during decoding.

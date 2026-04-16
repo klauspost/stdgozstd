@@ -82,7 +82,7 @@ func (b *blockDec) reset(br byteBuffer, windowSize uint64) error {
 		return errReservedBlockType
 	case blockTypeRLE:
 		if cSize > maxCompressedBlockSize || cSize > int(b.WindowSize) {
-			return ErrWindowSizeExceeded
+			return &ErrWindowSizeExceeded{Allowed: min(b.WindowSize, maxCompressedBlockSize), Requested: uint64(cSize)}
 		}
 		b.RLESize = uint32(cSize)
 		if b.lowMem {
@@ -103,7 +103,7 @@ func (b *blockDec) reset(br byteBuffer, windowSize uint64) error {
 		}
 	case blockTypeRaw:
 		if cSize > maxCompressedBlockSize || cSize > int(b.WindowSize) {
-			return ErrWindowSizeExceeded
+			return &ErrWindowSizeExceeded{Allowed: min(b.WindowSize, maxCompressedBlockSize), Requested: uint64(cSize)}
 		}
 		b.RLESize = 0
 		maxSize = -1
@@ -241,7 +241,7 @@ func (b *blockDec) decodeLiterals(in []byte, hist *history) (remain []byte, err 
 	}
 
 	if litRegenSize > int(b.WindowSize) || litRegenSize > maxCompressedBlockSize {
-		return in, ErrWindowSizeExceeded
+		return in, &ErrWindowSizeExceeded{Allowed: min(b.WindowSize, maxCompressedBlockSize), Requested: uint64(litRegenSize)}
 	}
 
 	switch litType {
