@@ -13,9 +13,8 @@ import (
 
 // decoderOptions holds configuration for the frame decoder.
 type decoderOptions struct {
-	maxWindowSize  uint64
-	lowMem         bool
-	ignoreChecksum bool
+	maxWindowSize int
+	lowMem        bool
 }
 
 // Limits for the decoder window size, as defined by the zstd specification.
@@ -177,14 +176,14 @@ func (d *frameDec) reset(br byteBuffer) error {
 		d.crc.Reset()
 	}
 
-	if d.WindowSize > d.o.maxWindowSize {
-		return &ErrWindowSizeExceeded{Allowed: d.o.maxWindowSize, Requested: d.WindowSize}
+	if d.WindowSize > uint64(d.o.maxWindowSize) {
+		return &ErrWindowSizeExceeded{Allowed: uint64(d.o.maxWindowSize), Requested: d.WindowSize}
 	}
 
 	if d.WindowSize == 0 && d.SingleSegment {
 		d.WindowSize = max(d.FrameContentSize, MinWindowSize)
-		if d.WindowSize > d.o.maxWindowSize {
-			return &ErrWindowSizeExceeded{Allowed: d.o.maxWindowSize, Requested: d.WindowSize}
+		if d.WindowSize > uint64(d.o.maxWindowSize) {
+			return &ErrWindowSizeExceeded{Allowed: uint64(d.o.maxWindowSize), Requested: d.WindowSize}
 		}
 	}
 
@@ -205,12 +204,7 @@ func (d *frameDec) reset(br byteBuffer) error {
 
 // next reads the next block header and data from the stream.
 func (d *frameDec) next(block *blockDec) error {
-	err := block.reset(d.rawInput, d.WindowSize)
-	if err != nil {
-		block.sendErr(err)
-		return err
-	}
-	return nil
+	return block.reset(d.rawInput, d.WindowSize)
 }
 
 // checkCRC reads and verifies the frame checksum.
@@ -223,15 +217,6 @@ func (d *frameDec) checkCRC() error {
 	got := uint32(d.crc.Sum64())
 	if got != want {
 		return errCRCMismatch
-	}
-	return nil
-}
-
-// consumeCRC reads and discards the frame checksum.
-func (d *frameDec) consumeCRC() error {
-	_, err := d.rawInput.readSmall(4)
-	if err != nil {
-		return &ErrCorrupted{msg: "reading checksum", err: err}
 	}
 	return nil
 }
@@ -276,12 +261,8 @@ func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
 		if d.FrameContentSize != fcsUnknown && uint64(len(dst)-crcStart) != d.FrameContentSize {
 			err = errFrameSizeMismatch
 		} else if d.HasCheckSum {
-			if d.o.ignoreChecksum {
-				err = d.consumeCRC()
-			} else {
-				_, _ = d.crc.Write(dst[crcStart:])
-				err = d.checkCRC()
-			}
+			_, _ = d.crc.Write(dst[crcStart:])
+			err = d.checkCRC()
 		}
 	}
 	d.history.b = saved

@@ -139,7 +139,7 @@ func (s *Scratch) compress1X(src []byte) ([]byte, error) {
 
 // compress1xDo performs single-stream Huffman encoding of src, appending to dst.
 func (s *Scratch) compress1xDo(dst, src []byte) []byte {
-	var bw = bitWriter{out: dst}
+	bw := bitWriter{out: dst}
 
 	n := len(src)
 	n -= n & 3

@@ -12,11 +12,8 @@ import (
 
 // FSE encoder size limits.
 const (
-	maxEncTableLog    = 8
-	maxEncTablesize   = 1 << maxTableLog
-	maxEncTableMask   = (1 << maxTableLog) - 1
-	minEncTablelog    = 5
-	maxEncSymbolValue = maxMatchLengthSymbol
+	maxEncTableLog = 8
+	minEncTablelog = 5
 )
 
 // fseEncoder builds and holds an FSE compression table.

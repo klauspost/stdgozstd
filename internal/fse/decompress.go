@@ -250,7 +250,7 @@ func (s *Scratch) decompress() error {
 	s1.init(br, s.decTable, s.actualTableLog)
 	s2.init(br, s.decTable, s.actualTableLog)
 
-	var tmp = s.ct.tableSymbol[:256]
+	tmp := s.ct.tableSymbol[:256]
 	var off uint8
 
 	if !s.zeroBits {

@@ -416,7 +416,7 @@ func (s *Scratch) buildCTable() error {
 		}
 	}
 
-	var startNode = int16(s.symbolLen)
+	startNode := int16(s.symbolLen)
 	nonNullRank := s.symbolLen - 1
 
 	nodeNb := startNode

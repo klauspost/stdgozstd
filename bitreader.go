@@ -4,11 +4,7 @@
 
 package zstd
 
-import (
-	"math/bits"
-
-	"github.com/klauspost/stdgozstd/internal/le"
-)
+import "github.com/klauspost/stdgozstd/internal/le"
 
 // bitReader reads bits from a reverse bitstream (LSB-first, read from end).
 type bitReader struct {
@@ -37,7 +33,7 @@ func (b *bitReader) init(in []byte) error {
 		b.fill()
 		b.fill()
 	}
-	b.bitsRead += 8 - uint8(highBits(uint32(v)))
+	b.bitsRead += 8 - uint8(highBit(uint32(v)))
 	return nil
 }
 
@@ -116,9 +112,4 @@ func (b *bitReader) close() error {
 		return corruptedErrorf("%d extra bits on block", b.remain())
 	}
 	return nil
-}
-
-// highBits returns the position of the highest set bit (0-based).
-func highBits(val uint32) (n uint32) {
-	return uint32(bits.Len32(val) - 1)
 }
