@@ -1066,10 +1066,10 @@ func TestSetMaxWindowSize(t *testing.T) {
 	}
 	_, err := io.ReadAll(r)
 	r.Close()
-	if !errors.Is(err, &ErrWindowSizeExceeded{}) {
+	var e *ErrWindowSizeExceeded
+	if !errors.As(err, &e) {
 		t.Fatalf("expected ErrWindowSizeExceeded, got %v", err)
 	}
-	e := err.(*ErrWindowSizeExceeded)
 	if e.Allowed != MinWindowSize {
 		t.Fatalf("Allowed = %d, want %d", e.Allowed, MinWindowSize)
 	}
