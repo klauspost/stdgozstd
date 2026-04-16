@@ -20,6 +20,7 @@ type ErrCorrupted struct {
 	err error
 }
 
+// Error implements the error interface.
 func (e *ErrCorrupted) Error() string {
 	if e.err != nil {
 		if e.msg != "" {
@@ -30,35 +31,54 @@ func (e *ErrCorrupted) Error() string {
 	return e.msg
 }
 
+// Is reports whether target is an *ErrCorrupted.
 func (e *ErrCorrupted) Is(target error) bool {
 	_, ok := target.(*ErrCorrupted)
 	return ok
 }
 
+// Unwrap returns the underlying error, if any.
 func (e *ErrCorrupted) Unwrap() error { return e.err }
 
+// corruptedError returns a new ErrCorrupted with the given message.
 func corruptedError(msg string) *ErrCorrupted {
 	return &ErrCorrupted{msg: msg}
 }
 
+// corruptedErrorf returns a new ErrCorrupted with a formatted message.
 func corruptedErrorf(format string, args ...any) *ErrCorrupted {
 	return &ErrCorrupted{msg: fmt.Sprintf(format, args...)}
 }
 
-const zstdMinMatch = 3
-const fcsUnknown = math.MaxUint64
+const zstdMinMatch = 3            // minimum match length per the zstd specification
+const fcsUnknown = math.MaxUint64 // sentinel for unknown frame content size
 
 // Parent zstd uses 30; fillBase in fse_predefined.go expects this.
 const maxOffsetBits = 30
 
+// ErrWindowSizeExceeded is returned when a frame or block requests
+// a window larger than the configured maximum.
+type ErrWindowSizeExceeded struct {
+	Allowed, Requested uint64
+}
+
+func (e *ErrWindowSizeExceeded) Error() string {
+	return fmt.Sprintf("window size exceeded (requested %d, allowed %d)", e.Requested, e.Allowed)
+}
+
+func (e *ErrWindowSizeExceeded) Is(target error) bool {
+	_, ok := target.(*ErrWindowSizeExceeded)
+	return ok
+}
+
 // Errors returned by the zstd encoder and decoder.
 var (
-	ErrWindowSizeExceeded = errors.New("window size exceeded")
-	ErrUnknownDictionary  = errors.New("unknown dictionary")
-	ErrDecoderClosed      = errors.New("decoder used after Close")
-	ErrEncoderClosed      = errors.New("encoder used after Close")
+	ErrUnknownDictionary = errors.New("unknown dictionary")
+	ErrDecoderClosed     = errors.New("decoder used after Close")
+	ErrEncoderClosed     = errors.New("encoder used after Close")
 )
 
+// Corruption sentinel errors returned during decoding.
 var (
 	errReservedBlockType    = corruptedError("reserved block type")
 	errCompressedSizeTooBig = corruptedError("compressed size too big")

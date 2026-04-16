@@ -10,6 +10,7 @@ import (
 	"io"
 )
 
+// bitReader reads bits in LSB order from a byte stream consumed back-to-front.
 type bitReader struct {
 	in       []byte
 	off      uint
@@ -17,6 +18,7 @@ type bitReader struct {
 	bitsRead uint8
 }
 
+// init initializes the reader from a complete bit stream.
 func (b *bitReader) init(in []byte) error {
 	if len(in) < 1 {
 		return errors.New("corrupt stream: too short")
@@ -39,6 +41,7 @@ func (b *bitReader) init(in []byte) error {
 	return nil
 }
 
+// getBits returns n bits, or 0 if no bits remain.
 func (b *bitReader) getBits(n uint8) uint16 {
 	if n == 0 || b.bitsRead >= 64 {
 		return 0
@@ -46,6 +49,7 @@ func (b *bitReader) getBits(n uint8) uint16 {
 	return b.getBitsFast(n)
 }
 
+// getBitsFast returns n bits without bounds checking.
 func (b *bitReader) getBitsFast(n uint8) uint16 {
 	const regMask = 64 - 1
 	v := uint16((b.value << (b.bitsRead & regMask)) >> ((regMask + 1 - n) & regMask))
@@ -53,6 +57,7 @@ func (b *bitReader) getBitsFast(n uint8) uint16 {
 	return v
 }
 
+// fillFast refills 32 bits without checking for end of input.
 func (b *bitReader) fillFast() {
 	if b.bitsRead < 32 {
 		return
@@ -65,6 +70,7 @@ func (b *bitReader) fillFast() {
 	b.off -= 4
 }
 
+// fill refills up to 32 bits, handling end-of-input gracefully.
 func (b *bitReader) fill() {
 	if b.bitsRead < 32 {
 		return
@@ -85,16 +91,19 @@ func (b *bitReader) fill() {
 	}
 }
 
+// fillFastStart loads the initial 64 bits when input is at least 8 bytes.
 func (b *bitReader) fillFastStart() {
 	b.value = binary.LittleEndian.Uint64(b.in[b.off-8:])
 	b.bitsRead = 0
 	b.off -= 8
 }
 
+// finished reports whether all bits have been consumed.
 func (b *bitReader) finished() bool {
 	return b.bitsRead >= 64 && b.off == 0
 }
 
+// close releases resources and returns an error if the stream was corrupted.
 func (b *bitReader) close() error {
 	b.in = nil
 	if b.bitsRead > 64 {

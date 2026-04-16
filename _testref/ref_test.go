@@ -34,7 +34,7 @@ func refLevel(liteLevel int) ref.EncoderLevel {
 
 func refEncode(t testing.TB, src []byte, opts ...ref.EOption) []byte {
 	t.Helper()
-	enc, err := ref.NewWriter(nil, opts...)
+	enc, err := ref.NewWriter(nil, append([]ref.EOption{ref.WithZeroFrames(true), ref.WithEncoderConcurrency(1)}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}

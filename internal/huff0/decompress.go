@@ -13,16 +13,20 @@ import (
 	"github.com/klauspost/stdgozstd/internal/fse"
 )
 
+// dTable holds the single-entry decompression lookup table.
 type dTable struct {
 	single []dEntrySingle
 }
 
+// dEntrySingle packs nbBits (low byte) and symbol (high byte) into one uint16.
 type dEntrySingle struct {
 	entry uint16
 }
 
+// use8BitTables enables the optimized 8-bit table decoder path.
 const use8BitTables = true
 
+// ReadTable reads a Huffman table from in and returns the remaining bytes.
 func ReadTable(in []byte, s *Scratch) (s2 *Scratch, remain []byte, err error) {
 	s, err = s.prepare(nil)
 	if err != nil {
@@ -153,6 +157,7 @@ func ReadTable(in []byte, s *Scratch) (s2 *Scratch, remain []byte, err error) {
 	return s, in, nil
 }
 
+// Decompress1X decompresses a single-stream Huffman payload.
 func (s *Scratch) Decompress1X(in []byte) (out []byte, err error) {
 	if cap(s.Out) < s.MaxDecodedSize {
 		s.Out = make([]byte, s.MaxDecodedSize)
@@ -162,6 +167,7 @@ func (s *Scratch) Decompress1X(in []byte) (out []byte, err error) {
 	return s.Out, err
 }
 
+// Decompress4X decompresses a four-stream Huffman payload into dstSize bytes.
 func (s *Scratch) Decompress4X(in []byte, dstSize int) (out []byte, err error) {
 	if dstSize > s.MaxDecodedSize {
 		return nil, ErrMaxDecodedSizeExceeded
@@ -174,6 +180,7 @@ func (s *Scratch) Decompress4X(in []byte, dstSize int) (out []byte, err error) {
 	return s.Out, err
 }
 
+// Decoder returns a stateless Decoder backed by this Scratch's table.
 func (s *Scratch) Decoder() *Decoder {
 	return &Decoder{
 		dt:             s.dt,
@@ -182,12 +189,14 @@ func (s *Scratch) Decoder() *Decoder {
 	}
 }
 
+// Decoder performs Huffman decompression using a preloaded table.
 type Decoder struct {
 	dt             dTable
 	actualTableLog uint8
 	bufs           *sync.Pool
 }
 
+// buffer returns a pooled scratch buffer for decompression.
 func (d *Decoder) buffer() *[4][256]byte {
 	buf, ok := d.bufs.Get().(*[4][256]byte)
 	if ok {
@@ -196,6 +205,7 @@ func (d *Decoder) buffer() *[4][256]byte {
 	return &[4][256]byte{}
 }
 
+// Decompress1X decompresses a single-stream Huffman payload, appending to dst.
 func (d *Decoder) Decompress1X(dst, src []byte) ([]byte, error) {
 	if len(d.dt.single) == 0 {
 		return nil, errors.New("no table loaded")
@@ -275,6 +285,7 @@ func (d *Decoder) Decompress1X(dst, src []byte) ([]byte, error) {
 	return dst, br.close()
 }
 
+// Decompress4X decompresses a four-stream Huffman payload, appending to dst.
 func (d *Decoder) Decompress4X(dst, src []byte) ([]byte, error) {
 	if len(d.dt.single) == 0 {
 		return nil, errors.New("no table loaded")
@@ -441,6 +452,7 @@ func (d *Decoder) Decompress4X(dst, src []byte) ([]byte, error) {
 	return dst, nil
 }
 
+// decompress1X8Bit decodes a single stream using tableLog <= 8 optimization.
 func (d *Decoder) decompress1X8Bit(dst, src []byte) ([]byte, error) {
 	if d.actualTableLog == 8 {
 		return d.decompress1X8BitExactly(dst, src)
@@ -738,6 +750,7 @@ func (d *Decoder) decompress1X8Bit(dst, src []byte) ([]byte, error) {
 	return dst, br.close()
 }
 
+// decompress1X8BitExactly decodes a single stream with tableLog == 8.
 func (d *Decoder) decompress1X8BitExactly(dst, src []byte) ([]byte, error) {
 	var br bitReaderBytes
 	err := br.init(src)
@@ -815,6 +828,7 @@ func (d *Decoder) decompress1X8BitExactly(dst, src []byte) ([]byte, error) {
 	return dst, br.close()
 }
 
+// decompress4X8bit decodes four interleaved streams using tableLog <= 8 optimization.
 func (d *Decoder) decompress4X8bit(dst, src []byte) ([]byte, error) {
 	if d.actualTableLog == 8 {
 		return d.decompress4X8bitExactly(dst, src)
@@ -1035,6 +1049,7 @@ func (d *Decoder) decompress4X8bit(dst, src []byte) ([]byte, error) {
 	return dst, nil
 }
 
+// decompress4X8bitExactly decodes four interleaved streams with tableLog == 8.
 func (d *Decoder) decompress4X8bitExactly(dst, src []byte) ([]byte, error) {
 	var br [4]bitReaderBytes
 	start := 6

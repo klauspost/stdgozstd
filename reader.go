@@ -26,6 +26,7 @@ type Reader struct {
 	dicts        map[uint32]*dict
 	decodedCount uint64
 	inFrame      bool
+	frameSeen    bool
 	err          error
 	initialized  bool
 }
@@ -35,6 +36,7 @@ var defaultDecoderOptions = decoderOptions{
 	lowMem:        true,
 }
 
+// ensureInit lazily initializes the Reader on first use.
 func (z *Reader) ensureInit() {
 	if z.initialized {
 		return
@@ -68,6 +70,7 @@ func NewReader(r io.Reader) (*Reader, error) {
 }
 
 // Reset discards the Reader's state and makes it read from r.
+// Configuration is preserved.
 // If r is nil, Reset is equivalent to [Reader.Close].
 func (z *Reader) Reset(r io.Reader) error {
 	z.ensureInit()
@@ -77,6 +80,7 @@ func (z *Reader) Reset(r io.Reader) error {
 	z.rw.r = r
 	z.buf = nil
 	z.inFrame = false
+	z.frameSeen = false
 	z.err = nil
 	z.decodedCount = 0
 	z.frame.history.reset()
@@ -109,12 +113,17 @@ func (z *Reader) Read(p []byte) (int, error) {
 					if written > 0 {
 						return written, nil
 					}
+					if !z.frameSeen {
+						z.err = &ErrCorrupted{msg: "empty input", err: io.ErrUnexpectedEOF}
+						return 0, z.err
+					}
 					z.err = io.EOF
 					return 0, io.EOF
 				}
 				z.err = err
 				return written, err
 			}
+			z.frameSeen = true
 			z.inFrame = true
 			z.decodedCount = 0
 			z.frame.history.reset()
@@ -216,14 +225,19 @@ func (z *Reader) AppendDecompress(dst, src []byte) ([]byte, error) {
 	}()
 
 	frame.bBuf = byteBuf(src)
+	var frameSeen bool
 	for {
 		err := frame.reset(&frame.bBuf)
 		if err == io.EOF {
+			if !frameSeen {
+				return dst, &ErrCorrupted{msg: "empty input", err: io.ErrUnexpectedEOF}
+			}
 			return dst, nil
 		}
 		if err != nil {
 			return dst, err
 		}
+		frameSeen = true
 		frame.history.reset()
 
 		if frame.DictionaryID != 0 {
@@ -245,8 +259,9 @@ func (z *Reader) AppendDecompress(dst, src []byte) ([]byte, error) {
 	}
 }
 
-// Close releases resources. After Close, the Reader may be reused by
-// calling [Reader.Reset].
+// Close releases resources but retains configuration.
+// After Close, the Reader may be reused by calling
+// [Reader.Reset].
 func (z *Reader) Close() error {
 	z.ensureInit()
 	z.err = ErrDecoderClosed
@@ -268,9 +283,14 @@ func (z *Reader) SetMaxWindowSize(n uint64) {
 }
 
 // AddDict registers a dictionary for decompression.
+// Sending nil will delete all previously registered dictionaries.
 func (z *Reader) AddDict(d *Dict) {
 	z.ensureInit()
 	if d == nil || d.d == nil {
+		if d == nil {
+			clear(z.dicts)
+			return
+		}
 		return
 	}
 	if z.dicts == nil {
@@ -280,8 +300,17 @@ func (z *Reader) AddDict(d *Dict) {
 }
 
 // SetRawDict registers raw bytes as a dictionary with ID 0.
+// The dictionary must be at least 8 bytes.
+// Sending nil will delete all previously registered dictionaries.
 func (z *Reader) SetRawDict(b []byte) {
 	z.ensureInit()
+	if b == nil {
+		clear(z.dicts)
+		return
+	}
+	if len(b) < 8 {
+		b = nil
+	}
 	if z.dicts == nil {
 		z.dicts = make(map[uint32]*dict)
 	}
@@ -320,11 +349,16 @@ func (z *Reader) WriteTo(w io.Writer) (int64, error) {
 			err := z.frame.reset(&z.rw)
 			if err != nil {
 				if err == io.EOF {
+					if !z.frameSeen {
+						z.err = &ErrCorrupted{msg: "empty input", err: io.ErrUnexpectedEOF}
+						return written, z.err
+					}
 					return written, nil
 				}
 				z.err = err
 				return written, err
 			}
+			z.frameSeen = true
 			z.inFrame = true
 			z.decodedCount = 0
 			z.frame.history.reset()

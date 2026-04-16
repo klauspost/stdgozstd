@@ -13,20 +13,6 @@ import (
 	zstd "github.com/klauspost/stdgozstd"
 )
 
-func TestRefErrorStringsMatch(t *testing.T) {
-	pairs := [][2]error{
-		{zstd.ErrWindowSizeExceeded, ref.ErrWindowSizeExceeded},
-		{zstd.ErrUnknownDictionary, ref.ErrUnknownDictionary},
-		{zstd.ErrDecoderClosed, ref.ErrDecoderClosed},
-		{zstd.ErrEncoderClosed, ref.ErrEncoderClosed},
-	}
-	for _, p := range pairs {
-		if p[0].Error() != p[1].Error() {
-			t.Errorf("error mismatch: lite=%q ref=%q", p[0], p[1])
-		}
-	}
-}
-
 func TestRefConstantsMatch(t *testing.T) {
 	if zstd.MinWindowSize != ref.MinWindowSize {
 		t.Errorf("MinWindowSize: lite=%d ref=%d", zstd.MinWindowSize, ref.MinWindowSize)

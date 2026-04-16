@@ -4,23 +4,27 @@
 
 package huff0
 
+// bitWriter writes Huffman-coded bits to a byte stream in little-endian order.
 type bitWriter struct {
 	bitContainer uint64
 	nBits        uint8
 	out          []byte
 }
 
+// addBits16Clean adds up to 16 bits. Value must be clean (no excess high bits).
 func (b *bitWriter) addBits16Clean(value uint16, bits uint8) {
 	b.bitContainer |= uint64(value) << (b.nBits & 63)
 	b.nBits += bits
 }
 
+// encSymbol encodes a single symbol using the compression table.
 func (b *bitWriter) encSymbol(ct cTable, symbol byte) {
 	enc := ct[symbol]
 	b.bitContainer |= uint64(enc.val) << (b.nBits & 63)
 	b.nBits += enc.nBits
 }
 
+// encTwoSymbols encodes two symbols in a single combined operation.
 func (b *bitWriter) encTwoSymbols(ct cTable, av, bv byte) {
 	encA := ct[av]
 	encB := ct[bv]
@@ -30,6 +34,7 @@ func (b *bitWriter) encTwoSymbols(ct cTable, av, bv byte) {
 	b.nBits += encA.nBits + encB.nBits
 }
 
+// encFourSymbols encodes four pre-looked-up symbols in a single combined operation.
 func (b *bitWriter) encFourSymbols(encA, encB, encC, encD cTableEntry) {
 	bitsA := encA.nBits
 	bitsB := bitsA + encB.nBits
@@ -43,6 +48,7 @@ func (b *bitWriter) encFourSymbols(encA, encB, encC, encD cTableEntry) {
 	b.nBits += bitsD
 }
 
+// flush32 writes the lower 32 bits to output if the buffer has accumulated >= 32 bits.
 func (b *bitWriter) flush32() {
 	if b.nBits < 32 {
 		return
@@ -56,6 +62,7 @@ func (b *bitWriter) flush32() {
 	b.bitContainer >>= 32
 }
 
+// flushAlign flushes all remaining bits to output, byte-aligned.
 func (b *bitWriter) flushAlign() {
 	nbBytes := (b.nBits + 7) >> 3
 	for i := range nbBytes {
@@ -65,6 +72,7 @@ func (b *bitWriter) flushAlign() {
 	b.bitContainer = 0
 }
 
+// close writes the end-of-stream marker and flushes remaining bits.
 func (b *bitWriter) close() {
 	b.addBits16Clean(1, 1)
 	b.flushAlign()

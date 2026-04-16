@@ -20,31 +20,38 @@ const (
 	BestCompression    = 9  // highest compression, slowest speed
 )
 
-var encoderPools [4]sync.Pool
+// encoderPools caches encoders by category to avoid repeated hash table allocation.
+var encoderPools [5]sync.Pool
 
+// putEncoder returns an encoder to its pool for reuse.
 func putEncoder(enc encoder) {
 	switch enc.(type) {
-	case *fastEncoder:
+	case *rawEncoder:
 		encoderPools[0].Put(enc)
-	case *doubleFastEncoder:
+	case *fastEncoder:
 		encoderPools[1].Put(enc)
-	case *betterFastEncoder:
+	case *doubleFastEncoder:
 		encoderPools[2].Put(enc)
-	case *bestFastEncoder:
+	case *betterFastEncoder:
 		encoderPools[3].Put(enc)
+	case *bestFastEncoder:
+		encoderPools[4].Put(enc)
 	}
 }
 
+// encoderCategory maps a compression level to a pool index (0-4).
 func encoderCategory(level int) int {
 	switch {
-	case level <= 2:
+	case level == 0:
 		return 0
-	case level <= 4:
+	case level <= 2:
 		return 1
-	case level <= 7:
+	case level <= 4:
 		return 2
-	default:
+	case level <= 7:
 		return 3
+	default:
+		return 4
 	}
 }
 
@@ -75,6 +82,7 @@ type Writer struct {
 	initialized bool
 }
 
+// ensureInit lazily initializes the Writer on first use.
 func (w *Writer) ensureInit() {
 	if w.initialized {
 		return
@@ -112,39 +120,36 @@ func (w *Writer) SetLevel(level int) error {
 		return fmt.Errorf("zstd: invalid level %d", level)
 	}
 	w.level = level
+	w.blockSize = maxCompressedBlockSize
+	// These mirror zstd default window sizes at levels 1, 3 and 9.
 	switch level {
 	case 0:
 		w.wndSize = 0
-		w.blockSize = maxCompressedBlockSize
 	case 1:
-		w.wndSize = 4 << 20
-		w.blockSize = 1 << 16
+		w.wndSize = 2 << 20
 	case 2:
-		w.wndSize = 8 << 20
-		w.blockSize = 1 << 16
+		w.wndSize = 3 << 20
 	case 3:
 		w.wndSize = 4 << 20
-		w.blockSize = maxCompressedBlockSize
 	case 4:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
-	case 5, 6:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
+		w.wndSize = 4 << 20
+	case 5:
+		w.wndSize = 4 << 20
+	case 6:
+		w.wndSize = 5 << 20
 	case 7:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
+		w.wndSize = 6 << 20
 	case 8:
-		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
+		w.wndSize = 7 << 20
 	case 9:
 		w.wndSize = 8 << 20
-		w.blockSize = maxCompressedBlockSize
 	}
 	return nil
 }
 
 // SetWindowSize overrides the window size for compression.
+// This allows limiting memory usage both for compression and decompression.
+//
 // n must be in the range [MinWindowSize, MaxWindowSize].
 func (w *Writer) SetWindowSize(n int) error {
 	w.ensureInit()
@@ -170,6 +175,7 @@ func (w *Writer) SetCRC(b bool) {
 }
 
 // AddDict registers a parsed dictionary for compression.
+// Sending nil removes the previous dictionary.
 func (w *Writer) AddDict(d *Dict) {
 	w.ensureInit()
 	if d == nil {
@@ -180,9 +186,11 @@ func (w *Writer) AddDict(d *Dict) {
 }
 
 // SetRawDict registers raw bytes as a dictionary prefix.
+// The dictionary must be at least 8 bytes; shorter will not be used.
+// Sending nil removes any previous dictionary.
 func (w *Writer) SetRawDict(b []byte) {
 	w.ensureInit()
-	if len(b) == 0 {
+	if len(b) < 8 {
 		w.dict = nil
 		return
 	}
@@ -201,7 +209,7 @@ func (w *Writer) ResetContentSize(wr io.Writer, size int64) {
 }
 
 // Reset discards the Writer's state and prepares it to write a new frame
-// to wr. Configuration (level, window size, CRC, dictionary) is preserved.
+// to wr. Configuration is preserved.
 func (w *Writer) Reset(wr io.Writer) {
 	w.ensureInit()
 	if cap(w.filling) == 0 {
@@ -242,6 +250,10 @@ func (w *Writer) newEncoder() encoder {
 	}
 
 	switch {
+	case w.level == 0:
+		e := &rawEncoder{}
+		e.configure(maxOff, bufReset, w.lowMem)
+		return e
 	case w.level <= 2:
 		e := &fastEncoder{}
 		e.configure(maxOff, bufReset, w.lowMem)
@@ -398,7 +410,7 @@ func (w *Writer) Close() error {
 //	frames = w.AppendCompress(part1, frames)
 //	frames = w.AppendCompress(part2, frames)
 //
-// If src is nil or empty, AppendCompress returns dst unchanged.
+// If src is nil or empty, a minimal valid frame is appended to dst.
 //
 // AppendCompress is safe for concurrent use on the same Writer,
 // provided configuration methods are not called concurrently.
@@ -418,13 +430,7 @@ func (w *Writer) nextBlock(final bool) error {
 		return fmt.Errorf("block > maxStoreBlockSize")
 	}
 	if !w.headerWritten {
-		if final && len(w.filling) == 0 {
-			w.headerWritten = true
-			w.fullFrameWritten = true
-			w.eofWritten = true
-			return nil
-		}
-		if final && len(w.filling) > 0 {
+		if final {
 			var current []byte
 			current = w.encodeAll(w.enc, w.filling, current)
 			var n2 int
@@ -461,6 +467,22 @@ func (w *Writer) nextBlock(final bool) error {
 
 	if w.eofWritten {
 		final = false
+	}
+
+	if raw, ok := w.enc.(rawBlockWriter); ok {
+		src := w.filling
+		w.nInput += int64(len(src))
+		if len(src) == 0 && !final {
+			return w.err
+		}
+		var n int
+		n, w.err = raw.writeRaw(w.w, src, final)
+		w.nWritten += int64(n)
+		if final {
+			w.eofWritten = true
+		}
+		w.filling = w.filling[:0]
+		return w.err
 	}
 
 	if len(w.filling) == 0 {
@@ -502,7 +524,19 @@ func (w *Writer) nextBlock(final bool) error {
 // encodeAll compresses src into a single frame appended to dst.
 func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
 	if len(src) == 0 {
-		return dst
+		fh := frameHeader{
+			ContentSize:   0,
+			WindowSize:    MinWindowSize,
+			SingleSegment: true,
+			Checksum:      false,
+			DictID:        0,
+		}
+		dst = fh.appendTo(dst)
+		var blk blockHeader
+		blk.setSize(0)
+		blk.setType(blockTypeRaw)
+		blk.setLast(true)
+		return blk.appendTo(dst)
 	}
 
 	single := len(src) <= w.wndSize && len(src) > MinWindowSize
@@ -519,7 +553,20 @@ func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
 	}
 	dst = fh.appendTo(dst)
 
-	if len(src) <= w.blockSize {
+	if raw, ok := enc.(rawBlockWriter); ok {
+		enc.reset(nil, true)
+		if w.crc {
+			_, _ = enc.checksum().Write(src)
+		}
+		for len(src) > 0 {
+			todo := src
+			if len(todo) > maxCompressedBlockSize {
+				todo = todo[:maxCompressedBlockSize]
+			}
+			src = src[len(todo):]
+			dst = raw.appendRaw(dst, todo, len(src) == 0)
+		}
+	} else if len(src) <= w.blockSize {
 		enc.reset(w.dict, true)
 		if w.crc {
 			_, _ = enc.checksum().Write(src)

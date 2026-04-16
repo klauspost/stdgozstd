@@ -277,13 +277,12 @@ func TestReadEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = r.Close() }()
-	got, err := io.ReadAll(r)
-	// io.ReadAll converts io.EOF to nil
-	if err != nil {
-		t.Fatal(err)
+	_, err = io.ReadAll(r)
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("expected empty, got %d bytes", len(got))
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("expected io.ErrUnexpectedEOF wrapped, got %v", err)
 	}
 }
 
@@ -486,12 +485,12 @@ func TestWriteToEmpty(t *testing.T) {
 	}
 	defer r.Close()
 	var buf bytes.Buffer
-	n, err := r.WriteTo(&buf)
-	if err != nil {
-		t.Fatal(err)
+	_, err = r.WriteTo(&buf)
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
-	if n != 0 || buf.Len() != 0 {
-		t.Fatalf("got %d bytes, want 0", n)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("expected io.ErrUnexpectedEOF wrapped, got %v", err)
 	}
 }
 
@@ -1040,5 +1039,18 @@ func TestAppendDecompressConcurrent(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Fatal(err)
+	}
+}
+
+func TestAppendDecompressEmpty(t *testing.T) {
+	var r Reader
+	for _, src := range [][]byte{nil, {}} {
+		_, err := r.AppendDecompress(nil, src)
+		if !errors.Is(err, &ErrCorrupted{}) {
+			t.Fatalf("expected ErrCorrupted for %v, got %v", src, err)
+		}
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("expected io.ErrUnexpectedEOF wrapped for %v, got %v", src, err)
+		}
 	}
 }
