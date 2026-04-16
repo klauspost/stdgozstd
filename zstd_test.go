@@ -6,8 +6,11 @@ package zstd
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"math/rand/v2"
+	"sync"
 	"testing"
 )
 
@@ -210,5 +213,256 @@ func TestAllLevelsRoundTrip(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestErrCorruptedError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  *ErrCorrupted
+		want string
+	}{
+		{"msg only", &ErrCorrupted{msg: "bad data"}, "bad data"},
+		{"err only", &ErrCorrupted{err: io.ErrUnexpectedEOF}, "unexpected EOF"},
+		{"msg+err", &ErrCorrupted{msg: "reading block", err: io.ErrUnexpectedEOF}, "reading block: unexpected EOF"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.err.Error(); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestErrCorruptedIs(t *testing.T) {
+	err := corruptedError("test")
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatal("errors.Is should match any *ErrCorrupted")
+	}
+}
+
+func TestErrCorruptedUnwrap(t *testing.T) {
+	inner := io.ErrUnexpectedEOF
+	err := &ErrCorrupted{msg: "wrapper", err: inner}
+	if !errors.Is(err, inner) {
+		t.Fatal("Unwrap should expose inner error")
+	}
+	plain := corruptedError("no inner")
+	if plain.Unwrap() != nil {
+		t.Fatal("Unwrap should return nil when no inner error")
+	}
+}
+
+func TestErrCorruptedNotIsOther(t *testing.T) {
+	err := corruptedError("x")
+	if errors.Is(err, io.EOF) {
+		t.Fatal("ErrCorrupted should not match io.EOF")
+	}
+}
+
+func TestErrWindowSizeExceededError(t *testing.T) {
+	err := &ErrWindowSizeExceeded{Allowed: 1024, Requested: 4096}
+	s := err.Error()
+	if !bytes.Contains([]byte(s), []byte("1024")) || !bytes.Contains([]byte(s), []byte("4096")) {
+		t.Fatalf("Error() should contain both values: %q", s)
+	}
+}
+
+func TestErrWindowSizeExceededIs(t *testing.T) {
+	err := &ErrWindowSizeExceeded{Allowed: 1, Requested: 2}
+	if !errors.Is(err, &ErrWindowSizeExceeded{}) {
+		t.Fatal("errors.Is should match any *ErrWindowSizeExceeded")
+	}
+	if errors.Is(err, &ErrCorrupted{}) {
+		t.Fatal("should not match ErrCorrupted")
+	}
+}
+
+func TestConcurrentReadersFromSameFrame(t *testing.T) {
+	src := bytes.Repeat([]byte("shared frame data "), 500)
+	w := NewWriter(nil)
+	compressed := w.AppendCompress(nil, src)
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines)
+
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			r, err := NewReader(bytes.NewReader(compressed))
+			if err != nil {
+				errs <- err
+				return
+			}
+			got, err := io.ReadAll(r)
+			r.Close()
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !bytes.Equal(got, src) {
+				errs <- bytes.ErrTooLarge
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+func TestAppendConcurrentBidirectional(t *testing.T) {
+	inputs := [][]byte{
+		bytes.Repeat([]byte("short"), 10),
+		bytes.Repeat([]byte("medium payload with some variation: "), 500),
+		randTestBytes(64*1024, 77),
+		make([]byte, 50000),
+	}
+
+	w := NewWriter(nil)
+	r, _ := NewReader(nil)
+
+	// Pre-compress all inputs.
+	compressed := make([][]byte, len(inputs))
+	for i, src := range inputs {
+		compressed[i] = w.AppendCompress(nil, src)
+	}
+
+	const goroutines = 16
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines)
+
+	for g := range goroutines {
+		idx := g % len(inputs)
+		go func() {
+			defer wg.Done()
+			src := inputs[idx]
+
+			// Compress.
+			c := w.AppendCompress(nil, src)
+
+			// Decompress the pre-made frame.
+			got, err := r.AppendDecompress(nil, compressed[idx])
+			if err != nil {
+				errs <- fmt.Errorf("decompress %d: %w", idx, err)
+				return
+			}
+			if !bytes.Equal(got, src) {
+				errs <- fmt.Errorf("decompress %d: mismatch", idx)
+				return
+			}
+
+			// Decompress what we just compressed.
+			got, err = r.AppendDecompress(nil, c)
+			if err != nil {
+				errs <- fmt.Errorf("re-decompress %d: %w", idx, err)
+				return
+			}
+			if !bytes.Equal(got, src) {
+				errs <- fmt.Errorf("re-decompress %d: mismatch", idx)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+func randTestBytes(n int, seed uint64) []byte {
+	b := make([]byte, n)
+	rng := rand.New(rand.NewPCG(seed, seed+1))
+	for i := range b {
+		b[i] = byte(rng.IntN(256))
+	}
+	return b
+}
+
+func TestZeroValueReaderWriteTo(t *testing.T) {
+	frame := buildRawFrame([]byte("zero writeto"))
+	var r Reader
+	if err := r.Reset(bytes.NewReader(frame)); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	n, err := r.WriteTo(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 12 || buf.String() != "zero writeto" {
+		t.Fatalf("got %d %q", n, buf.String())
+	}
+	r.Close()
+}
+
+func TestZeroValueReaderConfig(t *testing.T) {
+	var r Reader
+	if err := r.SetMaxWindowSize(MaxWindowSize); err != nil {
+		t.Fatal(err)
+	}
+	frame := buildRawFrame([]byte("config"))
+	got, err := r.AppendDecompress(nil, frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "config" {
+		t.Fatalf("got %q", got)
+	}
+	r.Close()
+}
+
+func TestZeroValueWriterReset(t *testing.T) {
+	src := bytes.Repeat([]byte("zero reset "), 100)
+	var buf bytes.Buffer
+	var w Writer
+	w.Reset(&buf)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestZeroValueWriterReadFrom(t *testing.T) {
+	src := bytes.Repeat([]byte("zero readfrom "), 100)
+	var buf bytes.Buffer
+	var w Writer
+	w.Reset(&buf)
+	n, err := w.ReadFrom(bytes.NewReader(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != int64(len(src)) {
+		t.Fatalf("ReadFrom returned %d, want %d", n, len(src))
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
 	}
 }

@@ -203,8 +203,6 @@ func loadTestDict(t *testing.T) []byte {
 	return b
 }
 
-// --- Parsed Dict Format Validation ---
-
 func TestParseDictFormat(t *testing.T) {
 	raw := loadTestDict(t)
 	d, err := ParseDict(raw)
@@ -306,8 +304,6 @@ func TestParseDictMinSize(t *testing.T) {
 		t.Fatal("expected error for minimal-size dict with no tables")
 	}
 }
-
-// --- Parsed Dict Roundtrip ---
 
 func TestParsedDictRoundTrip(t *testing.T) {
 	raw := loadTestDict(t)
@@ -434,8 +430,6 @@ func TestParsedDictAppendCompress(t *testing.T) {
 	}
 }
 
-// --- Dict ID Handling ---
-
 func TestDictIDMismatch(t *testing.T) {
 	raw := loadTestDict(t)
 	d, err := ParseDict(raw)
@@ -550,8 +544,6 @@ func TestMultipleDictsRegistered(t *testing.T) {
 	}
 }
 
-// --- Dict Content & Offsets ---
-
 func TestParsedDictOffsetsNotDefault(t *testing.T) {
 	raw := loadTestDict(t)
 	d, err := ParseDict(raw)
@@ -598,8 +590,6 @@ func TestParsedDictContentSize(t *testing.T) {
 		t.Fatalf("content (%d) should be smaller than raw (%d)", len(d.d.content), len(raw))
 	}
 }
-
-// --- Edge Cases ---
 
 func TestRawDictSmall(t *testing.T) {
 	src := bytes.Repeat([]byte("small dict edge case "), 50)
@@ -882,6 +872,128 @@ func TestDictReaderReuseAcrossReset(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got2, src2) {
+		t.Fatal("frame 2 mismatch")
+	}
+}
+
+func TestDictMarshalBinaryRoundTrip(t *testing.T) {
+	raw := loadTestDict(t)
+	d, err := ParseDict(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d2 Dict
+	if err := d2.UnmarshalBinary(b); err != nil {
+		t.Fatal(err)
+	}
+	if d2.ID() != d.ID() {
+		t.Fatalf("ID: %d != %d", d2.ID(), d.ID())
+	}
+	if !bytes.Equal(d2.Bytes(), d.Bytes()) {
+		t.Fatal("Bytes mismatch")
+	}
+}
+
+func TestReaderSetRawDictShortIsNoOp(t *testing.T) {
+	dictContent := bytes.Repeat([]byte("real dict content "), 50)
+	src := bytes.Repeat([]byte("data "), 100)
+
+	w := NewWriter(nil)
+	w.SetRawDict(dictContent)
+	compressed := w.AppendCompress(nil, src)
+
+	r, _ := NewReader(nil)
+	r.SetRawDict(dictContent)
+
+	// Short dict should be a no-op — real dict stays.
+	r.SetRawDict([]byte("short"))
+
+	got, err := r.AppendDecompress(nil, compressed)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch — short dict should not have cleared previous")
+	}
+}
+
+func TestReaderSetRawDictExactly8(t *testing.T) {
+	dict := []byte("12345678")
+	src := bytes.Repeat([]byte("exactly8 "), 100)
+
+	w := NewWriter(nil)
+	w.SetRawDict(dict)
+	compressed := w.AppendCompress(nil, src)
+
+	r, _ := NewReader(nil)
+	r.SetRawDict(dict)
+	got, err := r.AppendDecompress(nil, compressed)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestWriterSetRawDictShortIsNoOp(t *testing.T) {
+	dictContent := bytes.Repeat([]byte("real dict "), 50)
+	src := bytes.Repeat([]byte("data "), 100)
+
+	// Compress with dict.
+	w := NewWriter(nil)
+	w.SetRawDict(dictContent)
+	withDict := w.AppendCompress(nil, src)
+
+	// Short dict should be a no-op — dict stays.
+	w.SetRawDict([]byte("x"))
+	stillWithDict := w.AppendCompress(nil, src)
+
+	if !bytes.Equal(withDict, stillWithDict) {
+		t.Fatal("short SetRawDict should not have cleared dict")
+	}
+}
+
+func TestDictSwitchBetweenFrames(t *testing.T) {
+	dict1 := bytes.Repeat([]byte("dict one content "), 50)
+	dict2 := bytes.Repeat([]byte("dict two content "), 50)
+	src := bytes.Repeat([]byte("payload "), 100)
+
+	w1 := NewWriter(nil)
+	w1.SetRawDict(dict1)
+	frame1 := w1.AppendCompress(nil, src)
+
+	w2 := NewWriter(nil)
+	w2.SetRawDict(dict2)
+	frame2 := w2.AppendCompress(nil, src)
+
+	// Reader switches dicts between frames.
+	r, _ := NewReader(bytes.NewReader(frame1))
+	r.SetRawDict(dict1)
+	got1, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got1, src) {
+		t.Fatal("frame 1 mismatch")
+	}
+
+	r.SetRawDict(dict2)
+	if err := r.Reset(bytes.NewReader(frame2)); err != nil {
+		t.Fatal(err)
+	}
+	got2, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got2, src) {
 		t.Fatal("frame 2 mismatch")
 	}
 }

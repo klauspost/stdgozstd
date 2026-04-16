@@ -459,8 +459,6 @@ func TestReaderResetNilClosesReader(t *testing.T) {
 	}
 }
 
-// --- WriteTo tests ---
-
 func TestWriteToBasic(t *testing.T) {
 	frame := buildRawFrame([]byte("hello"))
 	r, err := NewReader(bytes.NewReader(frame))
@@ -1052,5 +1050,372 @@ func TestAppendDecompressEmpty(t *testing.T) {
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Fatalf("expected io.ErrUnexpectedEOF wrapped for %v, got %v", src, err)
 		}
+	}
+}
+
+func TestSetMaxWindowSize(t *testing.T) {
+	// Compress with default window (~4 MiB at level 3).
+	src := bytes.Repeat([]byte("window size test "), 200)
+	w := NewWriter(nil)
+	compressed := w.AppendCompress(nil, src)
+
+	// Decoding with a tiny max window should fail.
+	r, _ := NewReader(bytes.NewReader(compressed))
+	if err := r.SetMaxWindowSize(MinWindowSize); err != nil {
+		t.Fatal(err)
+	}
+	_, err := io.ReadAll(r)
+	r.Close()
+	if !errors.Is(err, &ErrWindowSizeExceeded{}) {
+		t.Fatalf("expected ErrWindowSizeExceeded, got %v", err)
+	}
+	e := err.(*ErrWindowSizeExceeded)
+	if e.Allowed != MinWindowSize {
+		t.Fatalf("Allowed = %d, want %d", e.Allowed, MinWindowSize)
+	}
+}
+
+func TestSetMaxWindowSizeMax(t *testing.T) {
+	src := bytes.Repeat([]byte("max window "), 200)
+	w := NewWriter(nil)
+	compressed := w.AppendCompress(nil, src)
+
+	r, _ := NewReader(bytes.NewReader(compressed))
+	if err := r.SetMaxWindowSize(MaxWindowSize); err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestSetMaxWindowSizeValidation(t *testing.T) {
+	r, _ := NewReader(nil)
+	if err := r.SetMaxWindowSize(0); err == nil {
+		t.Fatal("expected error for 0")
+	}
+	if err := r.SetMaxWindowSize(-1); err == nil {
+		t.Fatal("expected error for -1")
+	}
+	if err := r.SetMaxWindowSize(MaxWindowSize + 1); err == nil {
+		t.Fatal("expected error for too large")
+	}
+	if err := r.SetMaxWindowSize(MinWindowSize); err != nil {
+		t.Fatalf("MinWindowSize should be valid: %v", err)
+	}
+	if err := r.SetMaxWindowSize(MaxWindowSize); err != nil {
+		t.Fatalf("MaxWindowSize should be valid: %v", err)
+	}
+	r.Close()
+}
+
+func TestReadTruncatedBlockHeader(t *testing.T) {
+	// Valid frame header, then only 2 of 3 block header bytes.
+	var buf []byte
+	buf = append(buf, 0x28, 0xB5, 0x2F, 0xFD)
+	buf = append(buf, 0x20)
+	buf = append(buf, 0x05)
+	buf = append(buf, 0x01, 0x00) // only 2 bytes of block header
+
+	r, _ := NewReader(bytes.NewReader(buf))
+	_, err := io.ReadAll(r)
+	r.Close()
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("expected ErrCorrupted, got %v", err)
+	}
+}
+
+func TestReadTruncatedBlockData(t *testing.T) {
+	var buf []byte
+	buf = append(buf, 0x28, 0xB5, 0x2F, 0xFD)
+	buf = append(buf, 0x20)
+	buf = append(buf, 0x05)
+	// Block header: last=1, raw, size=5
+	bh := uint32(1) | (0 << 1) | (5 << 3)
+	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
+	buf = append(buf, 'a', 'b') // only 2 of 5 bytes
+
+	r, _ := NewReader(bytes.NewReader(buf))
+	_, err := io.ReadAll(r)
+	r.Close()
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("expected ErrCorrupted, got %v", err)
+	}
+}
+
+func TestReadReservedBlockType(t *testing.T) {
+	var buf []byte
+	buf = append(buf, 0x28, 0xB5, 0x2F, 0xFD)
+	buf = append(buf, 0x20)
+	buf = append(buf, 0x00)
+	// Block header: last=1, type=reserved(3), size=0
+	bh := uint32(1) | (3 << 1) | (0 << 3)
+	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
+
+	r, _ := NewReader(bytes.NewReader(buf))
+	_, err := io.ReadAll(r)
+	r.Close()
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("expected ErrCorrupted, got %v", err)
+	}
+}
+
+func TestReadWindowSizeTooSmall(t *testing.T) {
+	// Frame with window descriptor encoding a size below MinWindowSize is not
+	// possible via the encoding (minimum windowLog is 10 = 1024 = MinWindowSize),
+	// so test the single-segment path: FCS=0 with SingleSegment set.
+	var buf []byte
+	buf = append(buf, 0x28, 0xB5, 0x2F, 0xFD)
+	// FHD: not single segment, no checksum
+	buf = append(buf, 0x00)
+	// Window descriptor: log=10 base, frac=0 → 1024 (MinWindowSize). Valid.
+	buf = append(buf, 0x00)
+	bh := uint32(1) | (0 << 1) | (0 << 3)
+	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
+
+	r, _ := NewReader(bytes.NewReader(buf))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatal("expected empty")
+	}
+}
+
+func TestReadReservedFrameHeaderBit(t *testing.T) {
+	var buf []byte
+	buf = append(buf, 0x28, 0xB5, 0x2F, 0xFD)
+	// FHD with reserved bit 3 set.
+	buf = append(buf, 0x08)
+
+	r, _ := NewReader(bytes.NewReader(buf))
+	_, err := io.ReadAll(r)
+	r.Close()
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("expected ErrCorrupted, got %v", err)
+	}
+}
+
+type errReader struct {
+	data []byte
+	off  int
+	err  error
+}
+
+func (r *errReader) Read(p []byte) (int, error) {
+	if r.off >= len(r.data) {
+		return 0, r.err
+	}
+	n := copy(p, r.data[r.off:])
+	r.off += n
+	if r.off >= len(r.data) {
+		return n, r.err
+	}
+	return n, nil
+}
+
+func TestReadIOError(t *testing.T) {
+	frame := buildRawFrame([]byte("hello world, this is data"))
+	readErr := errors.New("disk read error")
+
+	// Truncate so the reader fails mid-block.
+	er := &errReader{data: frame[:len(frame)-5], err: readErr}
+	r, _ := NewReader(er)
+	_, err := io.ReadAll(r)
+	r.Close()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	// Error should be sticky.
+	_, err2 := r.Read(make([]byte, 1))
+	if err2 == nil {
+		t.Fatal("expected sticky error")
+	}
+}
+
+func TestReadMultipleSkippableFrames(t *testing.T) {
+	var buf []byte
+	for i := range 3 {
+		buf = append(buf, byte(0x50+i), 0x2A, 0x4D, 0x18)
+		buf = append(buf, 0x02, 0x00, 0x00, 0x00)
+		buf = append(buf, 0xAA, 0xBB)
+	}
+	buf = append(buf, buildRawFrame([]byte("ok"))...)
+
+	r, _ := NewReader(bytes.NewReader(buf))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ok" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestReadOnlySkippableFrames(t *testing.T) {
+	var buf []byte
+	buf = append(buf, 0x50, 0x2A, 0x4D, 0x18)
+	buf = append(buf, 0x01, 0x00, 0x00, 0x00)
+	buf = append(buf, 0xFF)
+
+	r, _ := NewReader(bytes.NewReader(buf))
+	_, err := io.ReadAll(r)
+	r.Close()
+	if !errors.Is(err, &ErrCorrupted{}) {
+		t.Fatalf("expected ErrCorrupted, got %v", err)
+	}
+}
+
+func TestReadSkippableFrameTypes(t *testing.T) {
+	for typ := byte(0x50); typ <= 0x5F; typ++ {
+		var buf []byte
+		buf = append(buf, typ, 0x2A, 0x4D, 0x18)
+		buf = append(buf, 0x00, 0x00, 0x00, 0x00) // 0 bytes to skip
+		buf = append(buf, buildRawFrame([]byte("x"))...)
+
+		r, _ := NewReader(bytes.NewReader(buf))
+		got, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatalf("type 0x%02X: %v", typ, err)
+		}
+		if string(got) != "x" {
+			t.Fatalf("type 0x%02X: got %q", typ, got)
+		}
+	}
+}
+
+func TestAppendDecompressPreExistingDst(t *testing.T) {
+	src := []byte("appended after prefix")
+	w := NewWriter(nil)
+	compressed := w.AppendCompress(nil, src)
+
+	var r Reader
+	prefix := []byte("PREFIX:")
+	got, err := r.AppendDecompress(prefix, compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "PREFIX:appended after prefix" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestAppendDecompressConcurrentDifferentData(t *testing.T) {
+	w := NewWriter(nil)
+	r, _ := NewReader(nil)
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines)
+
+	for i := range goroutines {
+		src := bytes.Repeat([]byte{byte('A' + i)}, 5000)
+		compressed := w.AppendCompress(nil, src)
+		go func() {
+			defer wg.Done()
+			got, err := r.AppendDecompress(nil, compressed)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !bytes.Equal(got, src) {
+				errs <- errors.New("mismatch")
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+func TestAppendDecompressLargeFrame(t *testing.T) {
+	// > 1 MiB to exercise the non-prealloc path in runDecoder.
+	rng := rand.New(rand.NewSource(99))
+	src := make([]byte, 1<<20+50000)
+	rng.Read(src)
+
+	w := NewWriter(nil)
+	compressed := w.AppendCompress(nil, src)
+
+	var r Reader
+	got, err := r.AppendDecompress(nil, compressed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestAppendDecompressMultiFrameWithCRC(t *testing.T) {
+	w := NewWriter(nil)
+	w.SetCRC(true)
+	frame1 := w.AppendCompress(nil, []byte("frame one "))
+	frame2 := w.AppendCompress(nil, []byte("frame two"))
+	combined := append(frame1, frame2...)
+
+	var r Reader
+	got, err := r.AppendDecompress(nil, combined)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "frame one frame two" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestWriteToCompressedMultiBlock(t *testing.T) {
+	// > 128KB to force multiple blocks.
+	src := make([]byte, maxCompressedBlockSize*2+5000)
+	for i := range src {
+		src[i] = byte(i % 251)
+	}
+	for level := BestSpeed; level <= BestCompression; level++ {
+		w := NewWriter(nil)
+		_ = w.SetLevel(level)
+		compressed := w.AppendCompress(nil, src)
+
+		r, _ := NewReader(bytes.NewReader(compressed))
+		var buf bytes.Buffer
+		n, err := r.WriteTo(&buf)
+		r.Close()
+		if err != nil {
+			t.Fatalf("level %d: %v", level, err)
+		}
+		if n != int64(len(src)) {
+			t.Fatalf("level %d: wrote %d, want %d", level, n, len(src))
+		}
+		if !bytes.Equal(buf.Bytes(), src) {
+			t.Fatalf("level %d: mismatch", level)
+		}
+	}
+}
+
+func TestWriteToPartialWriteError(t *testing.T) {
+	src := bytes.Repeat([]byte("partial write test "), 500)
+	w := NewWriter(nil)
+	compressed := w.AppendCompress(nil, src)
+
+	writeErr := errors.New("out of space")
+	r, _ := NewReader(bytes.NewReader(compressed))
+	// Accept 0 bytes — fail immediately.
+	ew := &errWriter{n: 0, err: writeErr}
+	_, err := r.WriteTo(ew)
+	r.Close()
+	if err != writeErr {
+		t.Fatalf("expected writeErr, got %v", err)
 	}
 }

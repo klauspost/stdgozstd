@@ -80,3 +80,67 @@ func TestFSEEncoderDecoderRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// RFC 8878 Appendix A: predefined distribution tables.
+func TestPredefinedTablesMatchRFC(t *testing.T) {
+	initPredefined()
+
+	// Literal Length table: tableLog=6, 36 symbols.
+	llNorm := []int16{
+		4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1,
+		2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1,
+		-1, -1, -1, -1,
+	}
+	if fsePredef[tableLiteralLengths].actualTableLog != 6 {
+		t.Fatalf("LL tableLog: got %d, want 6", fsePredef[tableLiteralLengths].actualTableLog)
+	}
+	for i, want := range llNorm {
+		if got := fsePredef[tableLiteralLengths].norm[i]; got != want {
+			t.Fatalf("LL norm[%d]: got %d, want %d", i, got, want)
+		}
+	}
+
+	// Offset table: tableLog=5, 29 symbols.
+	ofNorm := []int16{
+		1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1,
+	}
+	if fsePredef[tableOffsets].actualTableLog != 5 {
+		t.Fatalf("OF tableLog: got %d, want 5", fsePredef[tableOffsets].actualTableLog)
+	}
+	for i, want := range ofNorm {
+		if got := fsePredef[tableOffsets].norm[i]; got != want {
+			t.Fatalf("OF norm[%d]: got %d, want %d", i, got, want)
+		}
+	}
+
+	// Match Length table: tableLog=6, 53 symbols.
+	mlNorm := []int16{
+		1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1,
+		-1, -1, -1, -1, -1,
+	}
+	if fsePredef[tableMatchLengths].actualTableLog != 6 {
+		t.Fatalf("ML tableLog: got %d, want 6", fsePredef[tableMatchLengths].actualTableLog)
+	}
+	for i, want := range mlNorm {
+		if got := fsePredef[tableMatchLengths].norm[i]; got != want {
+			t.Fatalf("ML norm[%d]: got %d, want %d", i, got, want)
+		}
+	}
+}
+
+func TestFSENormalizeCountRLE(t *testing.T) {
+	var enc fseEncoder
+	// Single symbol repeated: should trigger RLE mode.
+	enc.count[0] = 100
+	enc.symbolLen = 1
+	enc.maxCount = 100
+	if err := enc.normalizeCount(100); err != nil {
+		t.Fatal(err)
+	}
+	if !enc.useRLE {
+		t.Fatal("expected RLE mode for single symbol")
+	}
+}

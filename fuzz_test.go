@@ -91,6 +91,10 @@ func FuzzNewReader(f *testing.F) {
 	if err != nil {
 		f.Fatal(err)
 	}
+	// Cap window to prevent OOM on crafted frames.
+	if err := r.SetMaxWindowSize(1 << 20); err != nil {
+		f.Fatal(err)
+	}
 	defer r.Close()
 	var dst []byte
 
@@ -100,7 +104,7 @@ func FuzzNewReader(f *testing.F) {
 			t.Fatal(err)
 		}
 		n, _ := io.Copy(io.Discard, io.Reader(r))
-		if n < 16<<20 {
+		if n < 1<<20 {
 			dst, _ = r.AppendDecompress(dst[:0], data)
 		}
 		err = r.Reset(bytes.NewReader(data))
