@@ -412,34 +412,13 @@ func (w *Writer) Close() error {
 //
 // If src is nil or empty, a minimal valid frame is appended to dst.
 //
-// AppendTo must not be called concurrently with other Writer methods, but
-// successive calls on the same Writer are safe without Reset.
+// AppendCompress is safe for concurrent use on the same Writer,
+// provided configuration methods are not called concurrently.
 func (w *Writer) AppendCompress(dst, src []byte) []byte {
 	w.ensureInit()
-	cat := encoderCategory(w.level)
-	if w.enc != nil {
-		var encCat int
-		switch w.enc.(type) {
-		case *rawEncoder:
-			encCat = 0
-		case *fastEncoder:
-			encCat = 1
-		case *doubleFastEncoder:
-			encCat = 2
-		case *betterFastEncoder:
-			encCat = 3
-		case *bestFastEncoder:
-			encCat = 4
-		}
-		if encCat != cat {
-			putEncoder(w.enc)
-			w.enc = nil
-		}
-	}
-	if w.enc == nil {
-		w.enc = w.newEncoder()
-	}
-	return w.encodeAll(w.enc, src, dst)
+	enc := w.newEncoder()
+	defer putEncoder(enc)
+	return w.encodeAll(enc, src, dst)
 }
 
 // nextBlock encodes the current filling buffer as a block.

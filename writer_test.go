@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"io"
 	"math/rand/v2"
+	"sync"
 	"testing"
 )
 
@@ -769,5 +770,41 @@ func TestZeroValueWriterConfig(t *testing.T) {
 	}
 	if !bytes.Equal(got, src) {
 		t.Fatal("mismatch")
+	}
+}
+
+func TestAppendCompressConcurrent(t *testing.T) {
+	src := bytes.Repeat([]byte("concurrent compress test data! "), 500)
+	w := NewWriter(nil)
+
+	const goroutines = 8
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines)
+
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			compressed := w.AppendCompress(nil, src)
+			r, err := NewReader(bytes.NewReader(compressed))
+			if err != nil {
+				errs <- err
+				return
+			}
+			defer r.Close()
+			got, err := io.ReadAll(r)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !bytes.Equal(got, src) {
+				errs <- bytes.ErrTooLarge
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
 	}
 }
