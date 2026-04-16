@@ -38,9 +38,8 @@ const (
 	maxCompressedBlockSize      = 128 << 10
 	compressedBlockOverAlloc    = 16
 	maxCompressedBlockSizeAlloc = 128<<10 + compressedBlockOverAlloc
-	maxBlockSize                = (1 << 21) - 1
-	maxMatchLen                 = 131074
-	maxSequences                = 0x7f00 + 0xffff
+	maxBlockSize = (1 << 21) - 1
+	maxMatchLen  = 131074
 )
 
 // Decoder object pools for reuse across blocks.
@@ -55,10 +54,9 @@ type blockDec struct {
 	dataStorage []byte
 	dst         []byte
 	literalBuf  []byte
-	WindowSize  uint64
-	err         error
-	sequence    []seqVals
-	RLESize     uint32
+	WindowSize uint64
+	err        error
+	RLESize    uint32
 	Type        blockType
 	Last        bool
 	lowMem      bool
@@ -126,13 +124,6 @@ func (b *blockDec) reset(br byteBuffer, windowSize uint64) error {
 		b.dst = make([]byte, 0, maxSize+1)
 	}
 	return nil
-}
-
-// sendErr stores an error to be returned on the next decodeBuf call.
-func (b *blockDec) sendErr(err error) {
-	b.Last = true
-	b.Type = blockTypeReserved
-	b.err = err
 }
 
 // decodeBuf decodes the block content into the history buffer.
@@ -460,9 +451,6 @@ func (b *blockDec) prepareSequences(in []byte, hist *history) (err error) {
 	}
 
 	if nSeqs == 0 {
-		if len(b.sequence) > 0 {
-			b.sequence = b.sequence[:0]
-		}
 		return nil
 	}
 

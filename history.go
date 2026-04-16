@@ -15,7 +15,6 @@ type history struct {
 	ignoreBuffer     int
 	windowSize       int
 	allocFrameBuffer int
-	error            bool
 	dict             *dict
 }
 
@@ -23,7 +22,6 @@ type history struct {
 func (h *history) reset() {
 	h.b = h.b[:0]
 	h.ignoreBuffer = 0
-	h.error = false
 	h.recentOffsets = [3]int{1, 4, 8}
 	h.decoders.freeDecoders()
 	h.decoders = sequenceDecs{br: h.decoders.br}

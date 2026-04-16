@@ -14,9 +14,6 @@ type seq struct {
 	llCode, mlCode, ofCode uint8
 }
 
-// seqVals is a placeholder for decoded sequence values.
-type seqVals struct{}
-
 // seqCompMode identifies the compression mode for a sequence section FSE table.
 type seqCompMode uint8
 
@@ -226,8 +223,10 @@ func (s *sequenceDecs) decodeSync(hist []byte) error {
 				src := out[start : start+ml]
 				dst := out[len(out)-ml:]
 				dst = dst[:len(src)]
-				// Intentional byte-at-a-time copy for overlapping match patterns.
-				for i := range src { //nolint:staticcheck
+				// copy must not be used here: src and dst overlap, and
+				// the zstd match-copy semantics require byte-at-a-time
+				// expansion (e.g. offset=1 replicates a single byte).
+				for i := range src {
 					dst[i] = src[i]
 				}
 			}

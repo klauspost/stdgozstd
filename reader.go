@@ -58,7 +58,7 @@ func (z *Reader) ensureInit() {
 }
 
 // NewReader creates a new Reader reading from r.
-// If r is nil, the Reader may only be used with [Reader.DecodeBytes];
+// If r is nil, the Reader may only be used with [Reader.AppendDecompress];
 // call [Reader.Reset] before streaming.
 func NewReader(r io.Reader) (*Reader, error) {
 	z := &Reader{}
@@ -276,14 +276,15 @@ func (z *Reader) Close() error {
 }
 
 // SetMaxWindowSize sets the maximum allowed window size for decoding.
-// The default is 128 MiB. The maximum is MaxWindowSize (512 MiB).
-func (z *Reader) SetMaxWindowSize(n uint64) {
+// The default is 128 MiB. The maximum is [MaxWindowSize] (512 MiB).
+func (z *Reader) SetMaxWindowSize(n int) {
 	z.ensureInit()
 	z.frame.o.maxWindowSize = n
 }
 
 // AddDict registers a dictionary for decompression.
-// Sending nil will delete all previously registered dictionaries.
+// Passing nil removes all previously registered dictionaries.
+// A non-nil Dict that was not created by [ParseDict] is ignored.
 func (z *Reader) AddDict(d *Dict) {
 	z.ensureInit()
 	if d == nil || d.d == nil {
@@ -300,8 +301,8 @@ func (z *Reader) AddDict(d *Dict) {
 }
 
 // SetRawDict registers raw bytes as a dictionary with ID 0.
-// The dictionary must be at least 8 bytes.
-// Sending nil will delete all previously registered dictionaries.
+// The dictionary must be at least 8 bytes; shorter values are ignored.
+// Passing nil removes all previously registered dictionaries.
 func (z *Reader) SetRawDict(b []byte) {
 	z.ensureInit()
 	if b == nil {
@@ -309,7 +310,7 @@ func (z *Reader) SetRawDict(b []byte) {
 		return
 	}
 	if len(b) < 8 {
-		b = nil
+		return
 	}
 	if z.dicts == nil {
 		z.dicts = make(map[uint32]*dict)

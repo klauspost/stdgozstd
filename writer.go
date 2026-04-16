@@ -11,6 +11,8 @@ import (
 	"sync"
 )
 
+var _ io.ReaderFrom = (*Writer)(nil)
+
 // Compression level constants. These map to the levels accepted by
 // [Writer.SetLevel].
 const (
@@ -96,7 +98,7 @@ func (w *Writer) ensureInit() {
 }
 
 // NewWriter returns a new Writer compressing data at the default level.
-// If w is nil the Writer may only be used with [Writer.AppendTo];
+// If w is nil the Writer may only be used with [Writer.AppendCompress];
 // call [Writer.Reset] before streaming.
 func NewWriter(w io.Writer) *Writer {
 	wr := &Writer{}
@@ -175,7 +177,7 @@ func (w *Writer) SetCRC(b bool) {
 }
 
 // AddDict registers a parsed dictionary for compression.
-// Sending nil removes the previous dictionary.
+// Passing nil removes the previous dictionary.
 func (w *Writer) AddDict(d *Dict) {
 	w.ensureInit()
 	if d == nil {
@@ -186,8 +188,8 @@ func (w *Writer) AddDict(d *Dict) {
 }
 
 // SetRawDict registers raw bytes as a dictionary prefix.
-// The dictionary must be at least 8 bytes; shorter will not be used.
-// Sending nil removes any previous dictionary.
+// The dictionary must be at least 8 bytes; shorter values are ignored.
+// Passing nil removes any previous dictionary.
 func (w *Writer) SetRawDict(b []byte) {
 	w.ensureInit()
 	if len(b) < 8 {
@@ -362,7 +364,7 @@ func (w *Writer) Flush() error {
 
 // Close flushes any remaining data, writes the frame trailer (and optional
 // checksum), and releases encoder resources. After Close, the Writer must
-// be [Writer.Reset] before it can be used again.
+// be reset with [Writer.Reset] before it can be used again.
 func (w *Writer) Close() error {
 	w.ensureInit()
 	if w.enc == nil {
@@ -528,15 +530,20 @@ func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
 			ContentSize:   0,
 			WindowSize:    MinWindowSize,
 			SingleSegment: true,
-			Checksum:      false,
-			DictID:        0,
+			Checksum:      w.crc,
+			DictID:        w.dict.ID(),
 		}
 		dst = fh.appendTo(dst)
 		var blk blockHeader
 		blk.setSize(0)
 		blk.setType(blockTypeRaw)
 		blk.setLast(true)
-		return blk.appendTo(dst)
+		dst = blk.appendTo(dst)
+		if w.crc {
+			enc.reset(nil, true)
+			dst = enc.appendCRC(dst)
+		}
+		return dst
 	}
 
 	single := len(src) <= w.wndSize && len(src) > MinWindowSize

@@ -2,7 +2,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package zstd implements the zstandard/rfc 8878 compression algorithm.
+// Package zstd implements reading and writing of zstd compressed data,
+// as specified in RFC 8878.
+//
+// A [Writer] compresses data written to it. A [Reader] decompresses data
+// read from it.
+//
+// Both types support streaming and one-shot operation. For one-shot use,
+// [Writer.AppendCompress] and [Reader.AppendDecompress] compress and
+// decompress a complete byte slice without the overhead of a streaming
+// interface.
 package zstd
 
 import (
@@ -62,10 +71,12 @@ type ErrWindowSizeExceeded struct {
 	Allowed, Requested uint64
 }
 
+// Error implements the error interface.
 func (e *ErrWindowSizeExceeded) Error() string {
 	return fmt.Sprintf("window size exceeded (requested %d, allowed %d)", e.Requested, e.Allowed)
 }
 
+// Is reports whether target is an *ErrWindowSizeExceeded.
 func (e *ErrWindowSizeExceeded) Is(target error) bool {
 	_, ok := target.(*ErrWindowSizeExceeded)
 	return ok

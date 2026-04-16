@@ -287,7 +287,7 @@ func (s *fseDecoder) buildDtable() error {
 			symbol := v.addBits()
 			nextState := symbolNext[symbol]
 			symbolNext[symbol] = nextState + 1
-			nBits := s.actualTableLog - byte(highBits(uint32(nextState)))
+			nBits := s.actualTableLog - byte(highBit(uint32(nextState)))
 			s.dt[u&maxTableMask].setNBits(nBits)
 			newState := (nextState << nBits) - tableSize
 			if newState > tableSize {
