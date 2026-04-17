@@ -6,6 +6,7 @@ package zstd
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"math/rand/v2"
 	"sync"
@@ -806,5 +807,363 @@ func TestAppendCompressConcurrent(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Fatal(err)
+	}
+}
+
+func TestSetWindowSize(t *testing.T) {
+	w := NewWriter(nil)
+	if err := w.SetWindowSize(MinWindowSize); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.SetWindowSize(MaxWindowSize); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.SetWindowSize(MinWindowSize - 1); err == nil {
+		t.Fatal("expected error for below min")
+	}
+	if err := w.SetWindowSize(MaxWindowSize + 1); err == nil {
+		t.Fatal("expected error for above max")
+	}
+	if err := w.SetWindowSize(0); err == nil {
+		t.Fatal("expected error for 0")
+	}
+	if err := w.SetWindowSize(-1); err == nil {
+		t.Fatal("expected error for negative")
+	}
+}
+
+func TestSetCRCProducesChecksum(t *testing.T) {
+	src := bytes.Repeat([]byte("crc test "), 200)
+
+	withCRC := NewWriter(nil)
+	withCRC.SetCRC(true)
+	crcFrame := withCRC.AppendCompress(nil, src)
+
+	noCRC := NewWriter(nil)
+	noCRC.SetCRC(false)
+	noCRCFrame := noCRC.AppendCompress(nil, src)
+
+	// CRC adds 4 bytes (checksum) + 1 bit in FHD.
+	if len(crcFrame) <= len(noCRCFrame) {
+		t.Fatalf("CRC frame (%d) should be larger than no-CRC frame (%d)", len(crcFrame), len(noCRCFrame))
+	}
+
+	// Both must decompress correctly.
+	var r Reader
+	for _, frame := range [][]byte{crcFrame, noCRCFrame} {
+		got, err := r.AppendDecompress(nil, frame)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, src) {
+			t.Fatal("mismatch")
+		}
+	}
+}
+
+func TestSetWindowSizeRoundTrip(t *testing.T) {
+	for _, wnd := range []int{1 << 16, 1 << 20, 8 << 20} {
+		// Keep data well under window size.
+		src := bytes.Repeat([]byte("wnd "), wnd/8)
+		w := NewWriter(nil)
+		_ = w.SetWindowSize(wnd)
+		frame := w.AppendCompress(nil, src)
+		var r Reader
+		got, err := r.AppendDecompress(nil, frame)
+		if err != nil {
+			t.Fatalf("window %d: %v", wnd, err)
+		}
+		if !bytes.Equal(got, src) {
+			t.Fatalf("window %d: mismatch", wnd)
+		}
+	}
+}
+
+func TestResetContentSize(t *testing.T) {
+	src := []byte("content size test data, exactly this long")
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	w.ResetContentSize(&buf, int64(len(src)))
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestResetContentSizeNegative(t *testing.T) {
+	src := []byte("negative content size means unknown")
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	w.ResetContentSize(&buf, -1)
+	if _, err := w.Write(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestResetContentSizeMismatch(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	w.ResetContentSize(&buf, 100)
+	if _, err := w.Write([]byte("short")); err != nil {
+		t.Fatal(err)
+	}
+	err := w.Close()
+	if err == nil {
+		t.Fatal("expected error for content size mismatch")
+	}
+}
+
+func TestAppendCompressPreExistingDst(t *testing.T) {
+	src := []byte("data to compress")
+	w := NewWriter(nil)
+	prefix := []byte("HEADER:")
+	got := w.AppendCompress(prefix, src)
+	if !bytes.HasPrefix(got, []byte("HEADER:")) {
+		t.Fatalf("prefix not preserved: %x", got[:7])
+	}
+	// Decompress the frame after the prefix.
+	var r Reader
+	dec, err := r.AppendDecompress(nil, got[7:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(dec, src) {
+		t.Fatal("mismatch")
+	}
+}
+
+func TestAppendCompressEmptyWithCRC(t *testing.T) {
+	w := NewWriter(nil)
+	w.SetCRC(true)
+	frame := w.AppendCompress(nil, nil)
+
+	var r Reader
+	got, err := r.AppendDecompress(nil, frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %d bytes", len(got))
+	}
+
+	// Verify CRC is present: frame with CRC should be longer than without.
+	w.SetCRC(false)
+	noCRC := w.AppendCompress(nil, nil)
+	if len(frame) <= len(noCRC) {
+		t.Fatalf("empty CRC frame (%d) should be longer than no-CRC (%d)", len(frame), len(noCRC))
+	}
+}
+
+func TestAppendCompressEmptyNoCRC(t *testing.T) {
+	w := NewWriter(nil)
+	w.SetCRC(false)
+	frame := w.AppendCompress(nil, nil)
+
+	var r Reader
+	got, err := r.AppendDecompress(nil, frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %d bytes", len(got))
+	}
+}
+
+func TestAppendCompressReuse(t *testing.T) {
+	w := NewWriter(nil)
+	src1 := []byte("first payload")
+	src2 := []byte("second payload, different content")
+
+	c1 := w.AppendCompress(nil, src1)
+	c2 := w.AppendCompress(nil, src2)
+
+	var r Reader
+	got1, err := r.AppendDecompress(nil, c1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got2, err := r.AppendDecompress(nil, c2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got1, src1) || !bytes.Equal(got2, src2) {
+		t.Fatal("reuse mismatch")
+	}
+}
+
+func TestAppendCompressConcurrentAllLevels(t *testing.T) {
+	src := bytes.Repeat([]byte("concurrent levels "), 500)
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	errs := make(chan error, goroutines)
+
+	for i := range goroutines {
+		level := i % (BestCompression + 1)
+		go func() {
+			defer wg.Done()
+			lw := NewWriter(nil)
+			_ = lw.SetLevel(level)
+			compressed := lw.AppendCompress(nil, src)
+			var r Reader
+			got, err := r.AppendDecompress(nil, compressed)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if !bytes.Equal(got, src) {
+				errs <- bytes.ErrTooLarge
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+}
+
+func TestFlushEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	if err := w.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+}
+
+func TestFlushMultiple(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+
+	parts := []string{"alpha.", "beta.", "gamma."}
+	for _, p := range parts {
+		if _, err := w.Write([]byte(p)); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Flush(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "alpha.beta.gamma." {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestReadFromEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	n, err := w.ReadFrom(bytes.NewReader(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("ReadFrom empty returned %d", n)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %d bytes", len(got))
+	}
+}
+
+type limitedErrReader struct {
+	n   int
+	err error
+}
+
+func (r *limitedErrReader) Read(p []byte) (int, error) {
+	if r.n <= 0 {
+		return 0, r.err
+	}
+	n := min(len(p), r.n)
+	for i := range n {
+		p[i] = 'x'
+	}
+	r.n -= n
+	return n, nil
+}
+
+func TestReadFromError(t *testing.T) {
+	readErr := errors.New("source error")
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	_, err := w.ReadFrom(&limitedErrReader{n: 100, err: readErr})
+	if err != readErr {
+		t.Fatalf("expected readErr, got %v", err)
+	}
+}
+
+func TestReadFromLarge(t *testing.T) {
+	src := make([]byte, maxCompressedBlockSize*2+1000)
+	for i := range src {
+		src[i] = byte(i % 199)
+	}
+
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+	n, err := w.ReadFrom(bytes.NewReader(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != int64(len(src)) {
+		t.Fatalf("ReadFrom returned %d, want %d", n, len(src))
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	got, err := io.ReadAll(r)
+	r.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, src) {
+		t.Fatal("mismatch")
 	}
 }
