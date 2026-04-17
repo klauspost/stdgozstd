@@ -23,24 +23,28 @@ Browse documentation: [![Go Reference](https://pkg.go.dev/badge/github.com/klaus
 
 ## Additions to proposal
 
-Levels 0 -> 9 are mapped to 4 internal levels:
+Levels 0 -> 9 are mapped to 4 internal encoders with per-level window sizes:
 
-| Level | Encoder           | Window |
-|-------|-------------------|--------|
-| 0     | raw blocks        | —      |
-| 1–2   | fastEncoder       | 4/8MB  |
-| 3–4   | doubleFastEncoder | 4/8MB  |
-| 5–7   | betterFastEncoder | 8MB    |
-| 8–9   | bestFastEncoder   | 8MB    |
+| Level | Encoder     | Window |
+|-------|-------------|--------|
+| 0     | raw blocks  | —      |
+| 1     | fast        | 2MB    |
+| 2     | fast        | 3MB    |
+| 3     | double-fast | 4MB    |
+| 4     | double-fast | 4MB    |
+| 5     | better      | 4MB    |
+| 6     | better      | 5MB    |
+| 7     | better      | 6MB    |
+| 8     | best        | 7MB    |
+| 9     | best        | 8MB    |
 
-Default is level 3 similar to zstandard. 
+Default is level 3 similar to zStandard.
+The window sizes roughly correspond to the defaults in zStandard.
 
-We *can* make changes to the individual levels, but that will require some amount of code duplication, 
-or slower processing due to more branching.
-Given that levels 1 + default + 9 by far are the most common, it is not a top priority.
+Experience from deflate is that by far "fastest", "default" and "best" are used in practice.
+So except for slight variations due to window sizes, levels 1, 3, 5 and 9 are the main ones.
 
-We can also reduce the lower levels default window size to somewhere between 1-2MB, 
-though it will only affect RAM usage, not speed in particular.
+More encoder levels are possible, but would come at a cost of either more code or slower processing. 
 
 Supporting `io.WriterTo` and `io.ReaderFrom` on `Writer` and `Reader`:
 
@@ -62,6 +66,4 @@ This would then be the regression tests for the implementation.
 `_testref` is sanify checks that crosschecks with [github.com/klauspost/compress/zstd](https://github.com/klauspost/compress/tree/master/zstd).
 This will not be part of the code submitted to the Go repo.
 
-
 I haven't done detailed benchmarking yet, outside that it looks reasonable compared to the upstream implementations.
-
