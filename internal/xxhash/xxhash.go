@@ -70,23 +70,29 @@ func (xh *Digest) update(b []byte) {
 		return
 	}
 
+	// Move values to registers. ~10% faster.
+	v0, v1, v2, v3 := xh.v[0], xh.v[1], xh.v[2], xh.v[3]
 	if xh.cnt > 0 {
 		n := copy(xh.buf[xh.cnt:], b)
 		b = b[n:]
-		xh.v[0] = xh.round(xh.v[0], binary.LittleEndian.Uint64(xh.buf[:]))
-		xh.v[1] = xh.round(xh.v[1], binary.LittleEndian.Uint64(xh.buf[8:]))
-		xh.v[2] = xh.round(xh.v[2], binary.LittleEndian.Uint64(xh.buf[16:]))
-		xh.v[3] = xh.round(xh.v[3], binary.LittleEndian.Uint64(xh.buf[24:]))
+		v0 = xh.round(v0, binary.LittleEndian.Uint64(xh.buf[:]))
+		v1 = xh.round(v1, binary.LittleEndian.Uint64(xh.buf[8:]))
+		v2 = xh.round(v2, binary.LittleEndian.Uint64(xh.buf[16:]))
+		v3 = xh.round(v3, binary.LittleEndian.Uint64(xh.buf[24:]))
 		xh.cnt = 0
 	}
 
 	for len(b) >= 32 {
-		xh.v[0] = xh.round(xh.v[0], binary.LittleEndian.Uint64(b))
-		xh.v[1] = xh.round(xh.v[1], binary.LittleEndian.Uint64(b[8:]))
-		xh.v[2] = xh.round(xh.v[2], binary.LittleEndian.Uint64(b[16:]))
-		xh.v[3] = xh.round(xh.v[3], binary.LittleEndian.Uint64(b[24:]))
+		v0 = xh.round(v0, binary.LittleEndian.Uint64(b))
+		v1 = xh.round(v1, binary.LittleEndian.Uint64(b[8:]))
+		v2 = xh.round(v2, binary.LittleEndian.Uint64(b[16:]))
+		v3 = xh.round(v3, binary.LittleEndian.Uint64(b[24:]))
 		b = b[32:]
 	}
+	xh.v[0] = v0
+	xh.v[1] = v1
+	xh.v[2] = v2
+	xh.v[3] = v3
 
 	if len(b) > 0 {
 		copy(xh.buf[:], b)

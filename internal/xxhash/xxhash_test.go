@@ -7,6 +7,7 @@ package xxhash
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"testing"
 )
 
@@ -130,5 +131,23 @@ func TestSumAppend(t *testing.T) {
 	}
 	if len(result) != len(prefix)+8 {
 		t.Errorf("Sum result length = %d, want %d", len(result), len(prefix)+8)
+	}
+}
+
+func BenchmarkSum64(b *testing.B) {
+	for _, sz := range []int{16, 1 << 10, 4 << 10, 1 + 4<<10, 64 << 10, 1 << 20, 16 << 20} {
+		in := make([]byte, sz)
+		for i := range in {
+			in[i] = byte(i)
+		}
+		d := New()
+		b.Run(fmt.Sprint("sz=", sz), func(b *testing.B) {
+			b.SetBytes(int64(sz))
+			d.Reset()
+			for i := 0; i < b.N; i++ {
+				_, _ = d.Write(in)
+				_ = d.Sum64()
+			}
+		})
 	}
 }
