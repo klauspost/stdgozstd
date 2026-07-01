@@ -67,10 +67,7 @@ func TestRawDictRoundTripAllLevels(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			r, err := NewReader(bytes.NewReader(buf.Bytes()))
-			if err != nil {
-				t.Fatal(err)
-			}
+			r := NewReader(bytes.NewReader(buf.Bytes()))
 			r.SetRawDict(dictContent)
 			got, err := io.ReadAll(r)
 			if err := r.Close(); err != nil {
@@ -100,10 +97,7 @@ func TestRawDictAppendTo(t *testing.T) {
 			w.SetRawDict(dictContent)
 			compressed := w.AppendCompress(nil, src)
 
-			r, err := NewReader(bytes.NewReader(compressed))
-			if err != nil {
-				t.Fatal(err)
-			}
+			r := NewReader(bytes.NewReader(compressed))
 			r.SetRawDict(dictContent)
 			got, err := io.ReadAll(r)
 			if err := r.Close(); err != nil {
@@ -147,10 +141,7 @@ func TestNoDictDecodeWithDict(t *testing.T) {
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	r.SetRawDict(dictContent)
 	got, err := io.ReadAll(r)
 	if err := r.Close(); err != nil {
@@ -180,10 +171,7 @@ func TestDictNilClear(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {
@@ -322,10 +310,7 @@ func TestParsedDictRoundTrip(t *testing.T) {
 			w.AddDict(d)
 			compressed := w.AppendCompress(nil, src)
 
-			r, err := NewReader(bytes.NewReader(compressed))
-			if err != nil {
-				t.Fatal(err)
-			}
+			r := NewReader(bytes.NewReader(compressed))
 			r.AddDict(d)
 			got, err := io.ReadAll(r)
 			if err := r.Close(); err != nil {
@@ -360,10 +345,7 @@ func TestParsedDictStreamRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	r.AddDict(d)
 	got, err := io.ReadAll(r)
 	_ = r.Close()
@@ -388,10 +370,7 @@ func TestParsedDictMultiBlock(t *testing.T) {
 	w.AddDict(d)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	r.AddDict(d)
 	got, err := io.ReadAll(r)
 	_ = r.Close()
@@ -415,10 +394,7 @@ func TestParsedDictAppendCompress(t *testing.T) {
 	w.AddDict(d)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(nil)
 	r.AddDict(d)
 	got, err := r.AppendDecompress(nil, compressed)
 	_ = r.Close()
@@ -443,10 +419,7 @@ func TestDictIDMismatch(t *testing.T) {
 	compressed := w.AppendCompress(nil, src)
 
 	// Decode without dict registered → ErrUnknownDictionary.
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	_, err = io.ReadAll(r)
 	_ = r.Close()
 	if err != ErrUnknownDictionary {
@@ -454,7 +427,7 @@ func TestDictIDMismatch(t *testing.T) {
 	}
 
 	// Also test DecodeBytes path.
-	r2, _ := NewReader(bytes.NewReader(nil))
+	r2 := NewReader(bytes.NewReader(nil))
 	_, err = r2.AppendDecompress(nil, compressed)
 	_ = r2.Close()
 	if err != ErrUnknownDictionary {
@@ -484,7 +457,7 @@ func TestDictIDFrameEncoding(t *testing.T) {
 			w.AddDict(d)
 			compressed := w.AppendCompress(nil, src)
 
-			r, _ := NewReader(bytes.NewReader(nil))
+			r := NewReader(bytes.NewReader(nil))
 			r.AddDict(d)
 			got, err := r.AppendDecompress(nil, compressed)
 			_ = r.Close()
@@ -530,7 +503,7 @@ func TestMultipleDictsRegistered(t *testing.T) {
 	// Concatenate two frames.
 	combined := append(compA, compB...)
 
-	r, _ := NewReader(bytes.NewReader(nil))
+	r := NewReader(bytes.NewReader(nil))
 	r.AddDict(dA)
 	r.AddDict(dB)
 	got, err := r.AppendDecompress(nil, combined)
@@ -600,7 +573,7 @@ func TestRawDictSmall(t *testing.T) {
 			w.SetRawDict(dictContent)
 			compressed := w.AppendCompress(nil, src)
 
-			r, _ := NewReader(bytes.NewReader(compressed))
+			r := NewReader(bytes.NewReader(compressed))
 			r.SetRawDict(dictContent)
 			got, err := io.ReadAll(r)
 			_ = r.Close()
@@ -634,7 +607,7 @@ func TestRawDictTooShortIgnored(t *testing.T) {
 	}
 
 	// Reader side: short dict should not register.
-	r, _ := NewReader(nil)
+	r := NewReader(nil)
 	r.SetRawDict(bytes.Repeat([]byte("x"), 3))
 	got, err := r.AppendDecompress(nil, want)
 	_ = r.Close()
@@ -662,7 +635,7 @@ func TestDictWriterReuseAcrossReset(t *testing.T) {
 			w.SetRawDict(dictContent)
 			compressed := w.AppendCompress(nil, frame.src)
 
-			r, _ := NewReader(bytes.NewReader(compressed))
+			r := NewReader(bytes.NewReader(compressed))
 			r.SetRawDict(dictContent)
 			got, err := io.ReadAll(r)
 			_ = r.Close()
@@ -688,10 +661,7 @@ func TestReaderAddDictNilClear(t *testing.T) {
 	w.AddDict(d)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	r.AddDict(d)
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -724,10 +694,7 @@ func TestReaderSetRawDictNilClear(t *testing.T) {
 	w.AddDict(d)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	r.AddDict(d)
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -767,10 +734,7 @@ func TestReaderNilClearMultipleDicts(t *testing.T) {
 	wRaw.SetRawDict(dictContent)
 	compRaw := wRaw.AppendCompress(nil, src)
 
-	r, err := NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(nil)
 	r.AddDict(d)
 	r.SetRawDict(dictContent)
 
@@ -821,10 +785,7 @@ func TestWriterSetRawDictNilClear(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {
@@ -851,7 +812,7 @@ func TestDictReaderReuseAcrossReset(t *testing.T) {
 	comp1 := compress(src1)
 	comp2 := compress(src2)
 
-	r, _ := NewReader(bytes.NewReader(comp1))
+	r := NewReader(bytes.NewReader(comp1))
 	r.SetRawDict(dictContent)
 	got1, err := io.ReadAll(r)
 	if err != nil {
@@ -906,7 +867,7 @@ func TestReaderSetRawDictShortIsNoOp(t *testing.T) {
 	w.SetRawDict(dictContent)
 	compressed := w.AppendCompress(nil, src)
 
-	r, _ := NewReader(nil)
+	r := NewReader(nil)
 	r.SetRawDict(dictContent)
 
 	// Short dict should be a no-op — real dict stays.
@@ -930,7 +891,7 @@ func TestReaderSetRawDictExactly8(t *testing.T) {
 	w.SetRawDict(dict)
 	compressed := w.AppendCompress(nil, src)
 
-	r, _ := NewReader(nil)
+	r := NewReader(nil)
 	r.SetRawDict(dict)
 	got, err := r.AppendDecompress(nil, compressed)
 	r.Close()
@@ -974,7 +935,7 @@ func TestDictSwitchBetweenFrames(t *testing.T) {
 	frame2 := w2.AppendCompress(nil, src)
 
 	// Reader switches dicts between frames.
-	r, _ := NewReader(bytes.NewReader(frame1))
+	r := NewReader(bytes.NewReader(frame1))
 	r.SetRawDict(dict1)
 	got1, err := io.ReadAll(r)
 	if err != nil {

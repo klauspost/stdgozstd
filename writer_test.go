@@ -25,10 +25,7 @@ func roundTrip(t *testing.T, src []byte) {
 		t.Fatal("close:", err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal("new reader:", err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -48,10 +45,7 @@ func TestWriterEmpty(t *testing.T) {
 	if buf.Len() == 0 {
 		t.Fatal("expected non-empty frame for empty input")
 	}
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer r.Close()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -132,10 +126,7 @@ func TestWriterMultipleSmallWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -172,10 +163,7 @@ func TestWriterFlush(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -212,10 +200,7 @@ func TestWriterReset(t *testing.T) {
 		{buf1.Bytes(), src1},
 		{buf2.Bytes(), src2},
 	} {
-		r, err := NewReader(bytes.NewReader(tc.compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := NewReader(bytes.NewReader(tc.compressed))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -291,10 +276,7 @@ func TestNoCompressionIsRaw(t *testing.T) {
 	if buf.Len() < len(src) {
 		t.Errorf("NoCompression reduced size: src=%d compressed=%d", len(src), buf.Len())
 	}
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer r.Close()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -314,10 +296,7 @@ func TestNoCompressionIsRaw(t *testing.T) {
 	if len(compressed) < len(src) {
 		t.Errorf("AppendCompress NoCompression reduced size: src=%d compressed=%d", len(src), len(compressed))
 	}
-	r2, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r2 := NewReader(bytes.NewReader(compressed))
 	defer r2.Close()
 	got2, err := io.ReadAll(r2)
 	if err != nil {
@@ -333,10 +312,7 @@ func TestWriterAppendCompress(t *testing.T) {
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -357,10 +333,7 @@ func TestWriterAppendCompressEmpty(t *testing.T) {
 	if !bytes.Equal(c1, c2) {
 		t.Fatal("nil and empty should produce identical frames")
 	}
-	r, err := NewReader(bytes.NewReader(c1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(c1))
 	defer r.Close()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -379,10 +352,7 @@ func TestWriterAppendCompressMultiBlock(t *testing.T) {
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -409,10 +379,7 @@ func TestWriterReadFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -433,10 +400,7 @@ func TestWriterCRCEnabled(t *testing.T) {
 	}
 
 	// Verify readable (CRC checked by reader).
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -458,10 +422,7 @@ func TestWriterNoCRC(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -505,10 +466,7 @@ func TestWriterSingleByteWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -531,10 +489,7 @@ func TestWriterSmallBuffer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 
 	// Read in small chunks.
@@ -570,10 +525,7 @@ func roundTripLevel(t *testing.T, src []byte, level int) {
 		t.Fatal("close:", err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal("new reader:", err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -670,10 +622,7 @@ func TestAppendCompressAllLevels(t *testing.T) {
 				t.Fatal(err)
 			}
 			compressed := w.AppendCompress(nil, src)
-			r, err := NewReader(bytes.NewReader(compressed))
-			if err != nil {
-				t.Fatal(err)
-			}
+			r := NewReader(bytes.NewReader(compressed))
 			defer func() { _ = r.Close() }()
 			got, err := io.ReadAll(r)
 			if err != nil {
@@ -698,10 +647,7 @@ func TestLevelSwitching(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r, err := NewReader(bytes.NewReader(buf.Bytes()))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := NewReader(bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -718,10 +664,7 @@ func TestZeroValueWriter(t *testing.T) {
 	var w Writer
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	defer r.Close()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -744,10 +687,7 @@ func TestZeroValueWriterStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	defer r.Close()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -787,11 +727,7 @@ func TestAppendCompressConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			compressed := w.AppendCompress(nil, src)
-			r, err := NewReader(bytes.NewReader(compressed))
-			if err != nil {
-				errs <- err
-				return
-			}
+			r := NewReader(bytes.NewReader(compressed))
 			defer r.Close()
 			got, err := io.ReadAll(r)
 			if err != nil {
@@ -891,7 +827,7 @@ func TestResetContentSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -914,7 +850,7 @@ func TestResetContentSizeNegative(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -1075,7 +1011,7 @@ func TestFlushMultiple(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -1100,7 +1036,7 @@ func TestReadFromEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -1157,7 +1093,7 @@ func TestReadFromLarge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {

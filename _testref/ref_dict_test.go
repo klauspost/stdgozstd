@@ -59,10 +59,7 @@ func TestRefDictMarshalRoundTrip(t *testing.T) {
 	w.AddDict(liteDict)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := zstd.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(compressed))
 	defer r.Close()
 	r.AddDict(&d2)
 	got, err := readAll(r)
@@ -98,10 +95,7 @@ func TestRefDictParsedParentEncodeLiteDecode(t *testing.T) {
 	for _, rl := range []ref.EncoderLevel{ref.SpeedFastest, ref.SpeedDefault, ref.SpeedBetterCompression, ref.SpeedBestCompression} {
 		compressed := refEncode(t, src, ref.WithEncoderLevel(rl), ref.WithEncoderDict(raw))
 
-		r, err := zstd.NewReader(bytes.NewReader(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := zstd.NewReader(bytes.NewReader(compressed))
 		r.AddDict(liteDict)
 		got, err := readAll(r)
 		r.Close()
@@ -138,10 +132,7 @@ func TestRefDictRawParentEncodeLiteDecode(t *testing.T) {
 	for _, rl := range []ref.EncoderLevel{ref.SpeedFastest, ref.SpeedDefault, ref.SpeedBetterCompression, ref.SpeedBestCompression} {
 		compressed := refEncode(t, src, ref.WithEncoderLevel(rl), ref.WithEncoderDictRaw(0, rawDict))
 
-		r, err := zstd.NewReader(bytes.NewReader(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := zstd.NewReader(bytes.NewReader(compressed))
 		r.SetRawDict(rawDict)
 		got, err := readAll(r)
 		r.Close()
@@ -169,13 +160,10 @@ func TestRefDictParsedAppendToBothDirs(t *testing.T) {
 
 	// parent → lite
 	compressed = refEncode(t, src, ref.WithEncoderDict(raw))
-	r, err := zstd.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(compressed))
 	defer r.Close()
 	r.AddDict(liteDict)
-	got, err = readAll(r)
+	got, err := readAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,13 +187,10 @@ func TestRefDictRawAppendToBothDirs(t *testing.T) {
 
 	// parent → lite
 	compressed = refEncode(t, src, ref.WithEncoderDictRaw(0, rawDict))
-	r, err := zstd.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(compressed))
 	defer r.Close()
 	r.SetRawDict(rawDict)
-	got, err = readAll(r)
+	got, err := readAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,13 +216,10 @@ func TestRefDictStreamBothDirs(t *testing.T) {
 
 	// parent stream → lite decode
 	compressed := refStreamEncode(t, src, ref.WithEncoderDict(raw))
-	r, err := zstd.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(compressed))
 	defer r.Close()
 	r.AddDict(liteDict)
-	got, err = readAll(r)
+	got, err := readAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}

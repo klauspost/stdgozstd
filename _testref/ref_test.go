@@ -74,10 +74,7 @@ func liteEncodeOpts(t testing.TB, src []byte, setup func(*zstd.Writer)) []byte {
 
 func liteDecode(t testing.TB, compressed []byte) []byte {
 	t.Helper()
-	r, err := zstd.NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := zstd.NewReader(nil)
 	got, err := r.AppendDecompress(nil, compressed)
 	if err != nil {
 		t.Fatal(err)
@@ -87,10 +84,7 @@ func liteDecode(t testing.TB, compressed []byte) []byte {
 
 func liteDecodeOpts(t testing.TB, compressed []byte, setup func(*zstd.Reader)) []byte {
 	t.Helper()
-	r, err := zstd.NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(compressed))
 	defer r.Close()
 	setup(r)
 	got, err := io.ReadAll(r)
