@@ -61,13 +61,13 @@ func (z *Reader) ensureInit() {
 // NewReader creates a new Reader reading from r.
 // If r is nil, the Reader may only be used with [Reader.AppendDecompress];
 // call [Reader.Reset] before streaming.
-func NewReader(r io.Reader) (*Reader, error) {
+func NewReader(r io.Reader) *Reader {
 	z := &Reader{}
 	z.ensureInit()
 	if r != nil {
 		z.rw.r = r
 	}
-	return z, nil
+	return z
 }
 
 // Reset discards the Reader's state and makes it read from r.

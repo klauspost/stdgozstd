@@ -17,7 +17,7 @@ func FuzzRoundTrip(f *testing.F) {
 	f.Add(bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add(make([]byte, 65536))
 	w := NewWriter(nil)
-	r, _ := NewReader(bytes.NewReader(nil))
+	r := NewReader(bytes.NewReader(nil))
 	var compressed []byte
 
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -87,10 +87,7 @@ func FuzzNewReader(f *testing.F) {
 	f.Add(w.AppendCompress(nil, bytes.Repeat([]byte{0}, 100000)))
 	f.Add(w.AppendCompress(nil, []byte{}))
 	f.Add([]byte{0x28, 0xb5, 0x2f, 0xfd}) // just magic
-	r, err := NewReader(nil)
-	if err != nil {
-		f.Fatal(err)
-	}
+	r := NewReader(nil)
 	// Cap window to prevent OOM on crafted frames.
 	if err := r.SetMaxWindowSize(1 << 20); err != nil {
 		f.Fatal(err)
@@ -99,7 +96,7 @@ func FuzzNewReader(f *testing.F) {
 	var dst []byte
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		err = r.Reset(bytes.NewReader(data))
+		err := r.Reset(bytes.NewReader(data))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +121,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 	f.Add([]byte{9, 5}, bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add([]byte{0x85, 0xff}, make([]byte, 65536))
 	w := NewWriter(nil)
-	r, _ := NewReader(bytes.NewReader(nil))
+	r := NewReader(bytes.NewReader(nil))
 
 	f.Fuzz(func(t *testing.T, cfg, data []byte) {
 		if len(cfg) != 2 {
@@ -199,7 +196,7 @@ func FuzzDictRoundTrip(f *testing.F) {
 	f.Add([]byte{0, 0}, []byte("small"))
 	f.Add([]byte{0, 0}, []byte("smallsmallsmallsmallsmall"))
 	w := NewWriter(nil)
-	r, _ := NewReader(bytes.NewReader(nil))
+	r := NewReader(bytes.NewReader(nil))
 
 	f.Fuzz(func(t *testing.T, cfg, data []byte) {
 		if len(cfg) < 2 || len(data) < 2 {
@@ -269,7 +266,7 @@ func FuzzReaderReset(f *testing.F) {
 	f.Add(byte(0), []byte{})
 	f.Add(byte(9), bytes.Repeat([]byte("reset"), 500))
 	w := NewWriter(nil)
-	r, _ := NewReader(bytes.NewReader(nil))
+	r := NewReader(bytes.NewReader(nil))
 	var buf bytes.Buffer
 
 	f.Fuzz(func(t *testing.T, levelByte byte, data []byte) {

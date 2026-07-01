@@ -65,10 +65,7 @@ func FuzzRefDecoderCompat(f *testing.F) {
 		}
 		encs[i] = enc
 	}
-	liteDec, err := zstd.NewReader(nil)
-	if err != nil {
-		f.Fatal(err)
-	}
+	liteDec := zstd.NewReader(nil)
 
 	var compressed, got []byte
 	f.Fuzz(func(t *testing.T, data []byte, levelHint int) {
@@ -82,7 +79,7 @@ func FuzzRefDecoderCompat(f *testing.F) {
 		}
 
 		compressed = enc.EncodeAll(data, compressed[:0])
-		got, err = liteDec.AppendDecompress(got[:0], compressed)
+		got, err := liteDec.AppendDecompress(got[:0], compressed)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,10 +103,7 @@ func FuzzRefBothDecoders(f *testing.F) {
 	}
 	defer refDec.Close()
 
-	liteDec, err := zstd.NewReader(bytes.NewReader(nil))
-	if err != nil {
-		f.Fatal(err)
-	}
+	liteDec := zstd.NewReader(bytes.NewReader(nil))
 	liteDec.SetMaxWindowSize(maxWindow)
 	var refResult []byte
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -149,10 +143,7 @@ func FuzzRefRawDictCompat(f *testing.F) {
 		f.Fatal(err)
 	}
 	defer refEnc.Close()
-	dec, err := zstd.NewReader(nil)
-	if err != nil {
-		f.Fatal(err)
-	}
+	dec := zstd.NewReader(nil)
 	defer dec.Close()
 
 	f.Fuzz(func(t *testing.T, dictData, payload []byte) {
@@ -226,10 +217,7 @@ func FuzzRefDictCompat(f *testing.F) {
 	f.Add(dictFor(testData(1024)), testData(512))
 
 	w := zstd.NewWriter(nil)
-	dec, err := zstd.NewReader(nil)
-	if err != nil {
-		f.Fatal(err)
-	}
+	dec := zstd.NewReader(nil)
 	defer dec.Close()
 	refDec, err := ref.NewReader(nil)
 	if err != nil {

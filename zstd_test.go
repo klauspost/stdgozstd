@@ -29,10 +29,7 @@ func TestRoundTripStreaming(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	// Read one byte at a time.
 	var got []byte
 	tmp := make([]byte, 1)
@@ -71,10 +68,7 @@ func TestRoundTripLarge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(buf.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {
@@ -91,10 +85,7 @@ func TestConcatenatedFrames(t *testing.T) {
 	frame2 := w.AppendCompress(nil, []byte("frame two"))
 
 	combined := append(frame1, frame2...)
-	r, err := NewReader(bytes.NewReader(combined))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(combined))
 	got, err := io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {
@@ -121,10 +112,7 @@ func TestIOCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := NewReader(bytes.NewReader(compressed.Bytes()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed.Bytes()))
 	var decompressed bytes.Buffer
 	_, err = io.Copy(&decompressed, r)
 	_ = r.Close()
@@ -150,10 +138,7 @@ func TestResetCycles(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r, err := NewReader(bytes.NewReader(buf.Bytes()))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := NewReader(bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -199,10 +184,7 @@ func TestAllLevelsRoundTrip(t *testing.T) {
 				}
 				compressed := w.AppendCompress(nil, input.data)
 
-				r, err := NewReader(bytes.NewReader(compressed))
-				if err != nil {
-					t.Fatal(err)
-				}
+				r := NewReader(bytes.NewReader(compressed))
 				got, err := io.ReadAll(r)
 				_ = r.Close()
 				if err != nil {
@@ -292,11 +274,7 @@ func TestConcurrentReadersFromSameFrame(t *testing.T) {
 	for range goroutines {
 		go func() {
 			defer wg.Done()
-			r, err := NewReader(bytes.NewReader(compressed))
-			if err != nil {
-				errs <- err
-				return
-			}
+			r := NewReader(bytes.NewReader(compressed))
 			got, err := io.ReadAll(r)
 			r.Close()
 			if err != nil {
@@ -324,7 +302,7 @@ func TestAppendConcurrentBidirectional(t *testing.T) {
 	}
 
 	w := NewWriter(nil)
-	r, _ := NewReader(nil)
+	r := NewReader(nil)
 
 	// Pre-compress all inputs.
 	compressed := make([][]byte, len(inputs))
@@ -429,7 +407,7 @@ func TestZeroValueWriterReset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -456,7 +434,7 @@ func TestZeroValueWriterReadFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, _ := NewReader(bytes.NewReader(buf.Bytes()))
+	r := NewReader(bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {

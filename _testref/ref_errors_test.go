@@ -32,11 +32,9 @@ func TestRefCorruptDataBothReject(t *testing.T) {
 	bad[len(bad)/2] ^= 0xff
 
 	// Lite should error.
-	r, err := zstd.NewReader(bytes.NewReader(bad))
-	if err == nil {
-		_, err = io.ReadAll(r)
-		r.Close()
-	}
+	r := zstd.NewReader(bytes.NewReader(bad))
+	_, err := io.ReadAll(r)
+	r.Close()
 	liteErr := err != nil
 
 	// Parent should error.
@@ -59,11 +57,9 @@ func TestRefTruncatedStreamBothReject(t *testing.T) {
 	// Truncate to 75% of the compressed data.
 	trunc := compressed[:len(compressed)*3/4]
 
-	r, err := zstd.NewReader(bytes.NewReader(trunc))
-	if err == nil {
-		_, err = io.ReadAll(r)
-		r.Close()
-	}
+	r := zstd.NewReader(bytes.NewReader(trunc))
+	_, err := io.ReadAll(r)
+	r.Close()
 	liteErr := err != nil
 
 	dec, err := ref.NewReader(nil)
@@ -89,11 +85,9 @@ func TestRefBadChecksumBothReject(t *testing.T) {
 	copy(bad, compressed)
 	bad[len(bad)-1] ^= 0xff
 
-	r, err := zstd.NewReader(bytes.NewReader(bad))
-	if err == nil {
-		_, err = io.ReadAll(r)
-		r.Close()
-	}
+	r := zstd.NewReader(bytes.NewReader(bad))
+	_, err := io.ReadAll(r)
+	r.Close()
 	liteErr := err != nil
 
 	dec, err := ref.NewReader(nil)

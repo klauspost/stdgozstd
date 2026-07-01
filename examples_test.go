@@ -22,10 +22,7 @@ func Example_writerReader() {
 		log.Fatal(err)
 	}
 
-	r, err := zstd.NewReader(&buf)
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(&buf)
 	if _, err := io.Copy(os.Stdout, r); err != nil {
 		log.Fatal(err)
 	}
@@ -40,10 +37,7 @@ func ExampleWriter_AppendCompress() {
 	w := zstd.NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := zstd.NewReader(bytes.NewReader(nil))
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(nil))
 	defer r.Close()
 	decompressed, err := r.AppendDecompress(nil, compressed)
 	if err != nil {
@@ -60,10 +54,7 @@ func ExampleReader_AppendDecompress() {
 	w := zstd.NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := zstd.NewReader(bytes.NewReader(nil))
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(nil))
 	defer r.Close()
 
 	prefix := []byte("data: ")
@@ -90,10 +81,7 @@ func ExampleWriter_SetLevel() {
 	fast := compress(zstd.BestSpeed)
 	best := compress(zstd.BestCompression)
 
-	r, err := zstd.NewReader(bytes.NewReader(nil))
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(nil))
 	defer r.Close()
 
 	dec, err := r.AppendDecompress(nil, fast)
@@ -124,10 +112,7 @@ func Example_reset() {
 
 	var buf bytes.Buffer
 	w := zstd.NewWriter(&buf)
-	r, err := zstd.NewReader(&buf)
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(&buf)
 
 	for _, p := range proverbs {
 		buf.Reset()
@@ -174,10 +159,7 @@ func ExampleWriter_Flush() {
 		log.Fatal(err)
 	}
 
-	r, err := zstd.NewReader(&buf)
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(&buf)
 	defer r.Close()
 	if _, err := io.Copy(os.Stdout, r); err != nil {
 		log.Fatal(err)
@@ -198,10 +180,7 @@ func ExampleWriter_ReadFrom() {
 		log.Fatal(err)
 	}
 
-	r, err := zstd.NewReader(&buf)
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(&buf)
 	defer r.Close()
 	if _, err := io.Copy(os.Stdout, r); err != nil {
 		log.Fatal(err)
@@ -225,10 +204,7 @@ func ExampleWriter_SetRawDict() {
 	without := compressWithDict(nil)
 	with := compressWithDict(dict)
 
-	r, err := zstd.NewReader(bytes.NewReader(nil))
-	if err != nil {
-		log.Fatal(err)
-	}
+	r := zstd.NewReader(bytes.NewReader(nil))
 	defer r.Close()
 
 	dec, err := r.AppendDecompress(nil, without)

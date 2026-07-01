@@ -59,10 +59,7 @@ func newXXHash(data []byte) uint64 {
 
 func TestReadRawBlock(t *testing.T) {
 	frame := buildRawFrame([]byte("hello"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -83,10 +80,7 @@ func TestReadRLEBlock(t *testing.T) {
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 	buf = append(buf, 'A') // repeated byte
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -114,10 +108,7 @@ func TestReadCompressedRawLiterals(t *testing.T) {
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 	buf = append(buf, compData...)
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -144,10 +135,7 @@ func TestReadCompressedRLELiterals(t *testing.T) {
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 	buf = append(buf, compData...)
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -174,10 +162,7 @@ func TestReadMultiBlock(t *testing.T) {
 	buf = append(buf, byte(bh2), byte(bh2>>8), byte(bh2>>16))
 	buf = append(buf, 'd', 'e')
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -193,10 +178,7 @@ func TestReadMultiFrame(t *testing.T) {
 	frame2 := buildRawFrame([]byte("lo"))
 	data := append(frame1, frame2...)
 
-	r, err := NewReader(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(data))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -209,10 +191,7 @@ func TestReadMultiFrame(t *testing.T) {
 
 func TestReadChecksum(t *testing.T) {
 	frame := buildRawFrameChecksum([]byte("abc"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -227,12 +206,9 @@ func TestReadBadChecksum(t *testing.T) {
 	frame := buildRawFrameChecksum([]byte("abc"))
 	// Corrupt the checksum (last 4 bytes)
 	frame[len(frame)-1] ^= 0xFF
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer func() { _ = r.Close() }()
-	_, err = io.ReadAll(r)
+	_, err := io.ReadAll(r)
 	if !errors.Is(err, &ErrCorrupted{}) {
 		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
@@ -248,36 +224,27 @@ func TestReadFrameSizeMismatch(t *testing.T) {
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 	buf = append(buf, 'a', 'b', 'c')
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
-	_, err = io.ReadAll(r)
+	_, err := io.ReadAll(r)
 	if !errors.Is(err, &ErrCorrupted{}) {
 		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
 }
 
 func TestReadMagicMismatch(t *testing.T) {
-	r, err := NewReader(bytes.NewReader([]byte{0x00, 0x00, 0x00, 0x00}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader([]byte{0x00, 0x00, 0x00, 0x00}))
 	defer func() { _ = r.Close() }()
-	_, err = io.ReadAll(r)
+	_, err := io.ReadAll(r)
 	if !errors.Is(err, &ErrCorrupted{}) {
 		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
 }
 
 func TestReadEmpty(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(nil))
 	defer func() { _ = r.Close() }()
-	_, err = io.ReadAll(r)
+	_, err := io.ReadAll(r)
 	if !errors.Is(err, &ErrCorrupted{}) {
 		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
@@ -294,10 +261,7 @@ func TestReadEmptyFrame(t *testing.T) {
 	// Block: last=1, raw, size=0
 	buf = append(buf, 0x01, 0x00, 0x00)
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -317,10 +281,7 @@ func TestReadSkippableFrame(t *testing.T) {
 	// Real frame
 	buf = append(buf, buildRawFrame([]byte("hi"))...)
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -333,10 +294,7 @@ func TestReadSkippableFrame(t *testing.T) {
 
 func TestReadSmallBuffer(t *testing.T) {
 	frame := buildRawFrame([]byte("hello world"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer func() { _ = r.Close() }()
 
 	// Read one byte at a time
@@ -363,10 +321,7 @@ func TestReadReset(t *testing.T) {
 	frame1 := buildRawFrame([]byte("first"))
 	frame2 := buildRawFrame([]byte("second"))
 
-	r, err := NewReader(bytes.NewReader(frame1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame1))
 	defer func() { _ = r.Close() }()
 
 	got1, err := io.ReadAll(r)
@@ -391,12 +346,9 @@ func TestReadReset(t *testing.T) {
 
 func TestReadAfterClose(t *testing.T) {
 	frame := buildRawFrame([]byte("test"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	_ = r.Close()
-	_, err = r.Read(make([]byte, 10))
+	_, err := r.Read(make([]byte, 10))
 	if err != ErrDecoderClosed {
 		t.Fatalf("expected ErrDecoderClosed, got %v", err)
 	}
@@ -412,10 +364,7 @@ func TestReadWindowedFrame(t *testing.T) {
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 	buf = append(buf, 'h', 'e', 'l', 'l', 'o')
 
-	r, err := NewReader(bytes.NewReader(buf))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buf))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -427,10 +376,7 @@ func TestReadWindowedFrame(t *testing.T) {
 }
 
 func TestNewReaderNilInput(t *testing.T) {
-	r, err := NewReader(nil)
-	if err != nil {
-		t.Fatalf("NewReader(nil) returned error: %v", err)
-	}
+	r := NewReader(nil)
 	frame := buildRawFrame([]byte("after nil"))
 	if err := r.Reset(bytes.NewReader(frame)); err != nil {
 		t.Fatal(err)
@@ -446,14 +392,11 @@ func TestNewReaderNilInput(t *testing.T) {
 }
 
 func TestReaderResetNilClosesReader(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(buildRawFrame([]byte("x"))))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buildRawFrame([]byte("x"))))
 	if err := r.Reset(nil); err != nil {
 		t.Fatal(err)
 	}
-	_, err = r.Read(make([]byte, 1))
+	_, err := r.Read(make([]byte, 1))
 	if err != ErrDecoderClosed {
 		t.Fatalf("expected ErrDecoderClosed after Reset(nil), got %v", err)
 	}
@@ -461,10 +404,7 @@ func TestReaderResetNilClosesReader(t *testing.T) {
 
 func TestWriteToBasic(t *testing.T) {
 	frame := buildRawFrame([]byte("hello"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 	var buf bytes.Buffer
 	n, err := r.WriteTo(&buf)
@@ -477,13 +417,10 @@ func TestWriteToBasic(t *testing.T) {
 }
 
 func TestWriteToEmpty(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(nil))
 	defer r.Close()
 	var buf bytes.Buffer
-	_, err = r.WriteTo(&buf)
+	_, err := r.WriteTo(&buf)
 	if !errors.Is(err, &ErrCorrupted{}) {
 		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
@@ -499,10 +436,7 @@ func TestWriteToEmptyFrame(t *testing.T) {
 	frame = append(frame, 0x00)
 	frame = append(frame, 0x01, 0x00, 0x00)
 
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 	var buf bytes.Buffer
 	n, err := r.WriteTo(&buf)
@@ -526,10 +460,7 @@ func TestWriteToMultiBlock(t *testing.T) {
 	frame = append(frame, byte(bh2), byte(bh2>>8), byte(bh2>>16))
 	frame = append(frame, 'd', 'e')
 
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 	var buf bytes.Buffer
 	n, err := r.WriteTo(&buf)
@@ -543,10 +474,7 @@ func TestWriteToMultiBlock(t *testing.T) {
 
 func TestWriteToMultiFrame(t *testing.T) {
 	data := append(buildRawFrame([]byte("hi")), buildRawFrame([]byte("lo"))...)
-	r, err := NewReader(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(data))
 	defer r.Close()
 	var buf bytes.Buffer
 	n, err := r.WriteTo(&buf)
@@ -560,10 +488,7 @@ func TestWriteToMultiFrame(t *testing.T) {
 
 func TestWriteToChecksum(t *testing.T) {
 	frame := buildRawFrameChecksum([]byte("abc"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 	var buf bytes.Buffer
 	n, err := r.WriteTo(&buf)
@@ -578,13 +503,10 @@ func TestWriteToChecksum(t *testing.T) {
 func TestWriteToBadChecksum(t *testing.T) {
 	frame := buildRawFrameChecksum([]byte("abc"))
 	frame[len(frame)-1] ^= 0xFF
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 	var buf bytes.Buffer
-	_, err = r.WriteTo(&buf)
+	_, err := r.WriteTo(&buf)
 	if !errors.Is(err, &ErrCorrupted{}) {
 		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
@@ -599,25 +521,19 @@ func TestWriteToFrameSizeMismatch(t *testing.T) {
 	frame = append(frame, byte(bh), byte(bh>>8), byte(bh>>16))
 	frame = append(frame, 'a', 'b', 'c') // only 3 bytes
 
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 	var buf bytes.Buffer
-	_, err = r.WriteTo(&buf)
+	_, err := r.WriteTo(&buf)
 	if !errors.Is(err, &ErrCorrupted{}) {
 		t.Fatalf("expected ErrCorrupted, got %v", err)
 	}
 }
 
 func TestWriteToAfterClose(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(buildRawFrame([]byte("test"))))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buildRawFrame([]byte("test"))))
 	r.Close()
-	_, err = r.WriteTo(&bytes.Buffer{})
+	_, err := r.WriteTo(&bytes.Buffer{})
 	if err != ErrDecoderClosed {
 		t.Fatalf("expected ErrDecoderClosed, got %v", err)
 	}
@@ -625,10 +541,7 @@ func TestWriteToAfterClose(t *testing.T) {
 
 func TestWriteToAfterPartialRead(t *testing.T) {
 	frame := buildRawFrame([]byte("hello world"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 
 	// Read only 5 bytes.
@@ -668,15 +581,12 @@ func (w *errWriter) Write(p []byte) (int, error) {
 
 func TestWriteToWriteError(t *testing.T) {
 	frame := buildRawFrame([]byte("hello world"))
-	r, err := NewReader(bytes.NewReader(frame))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame))
 	defer r.Close()
 
 	writeErr := errors.New("disk full")
 	ew := &errWriter{n: 0, err: writeErr}
-	_, err = r.WriteTo(ew)
+	_, err := r.WriteTo(ew)
 	if err != writeErr {
 		t.Fatalf("expected writeErr, got %v", err)
 	}
@@ -698,13 +608,10 @@ func TestWriteToCompressed(t *testing.T) {
 			}
 			compressed := w.AppendCompress(nil, src)
 
-			r, err := NewReader(bytes.NewReader(compressed))
-			if err != nil {
-				t.Fatal(err)
-			}
+			r := NewReader(bytes.NewReader(compressed))
 			defer r.Close()
 			var buf bytes.Buffer
-			_, err = r.WriteTo(&buf)
+			_, err := r.WriteTo(&buf)
 			if err != nil {
 				t.Fatalf("level %d: %v", level, err)
 			}
@@ -723,10 +630,7 @@ func TestWriteToLarge(t *testing.T) {
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(bytes.NewReader(compressed))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(compressed))
 	defer r.Close()
 	var buf bytes.Buffer
 	n, err := r.WriteTo(&buf)
@@ -752,14 +656,11 @@ func TestWriteToDict(t *testing.T) {
 		w.SetRawDict(dictContent)
 		compressed := w.AppendCompress(nil, src)
 
-		r, err := NewReader(bytes.NewReader(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := NewReader(bytes.NewReader(compressed))
 		defer r.Close()
 		r.SetRawDict(dictContent)
 		var buf bytes.Buffer
-		_, err = r.WriteTo(&buf)
+		_, err := r.WriteTo(&buf)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -781,10 +682,7 @@ func TestWriteToDict(t *testing.T) {
 		w.AddDict(d)
 		compressed := w.AppendCompress(nil, src)
 
-		r, err := NewReader(bytes.NewReader(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r := NewReader(bytes.NewReader(compressed))
 		defer r.Close()
 		r.AddDict(d)
 		var buf bytes.Buffer
@@ -802,10 +700,7 @@ func TestReaderReuseAfterClose(t *testing.T) {
 	frame1 := buildRawFrame([]byte("before"))
 	frame2 := buildRawFrame([]byte("after"))
 
-	r, err := NewReader(bytes.NewReader(frame1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame1))
 	got, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
@@ -832,10 +727,7 @@ func TestReaderReuseAfterCloseWriteTo(t *testing.T) {
 	frame1 := buildRawFrame([]byte("before"))
 	frame2 := buildRawFrame([]byte("after"))
 
-	r, err := NewReader(bytes.NewReader(frame1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame1))
 	got, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
@@ -863,10 +755,7 @@ func TestReaderReuseAfterCloseAppendCompress(t *testing.T) {
 	frame1 := buildRawFrame([]byte("before"))
 	frame2 := buildRawFrame([]byte("after"))
 
-	r, err := NewReader(bytes.NewReader(frame1))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(frame1))
 	got, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
@@ -890,10 +779,7 @@ func TestReaderReuseAfterCloseAppendCompress(t *testing.T) {
 }
 
 func TestReaderReuseAfterCloseMultiple(t *testing.T) {
-	r, err := NewReader(bytes.NewReader(buildRawFrame([]byte("init"))))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(buildRawFrame([]byte("init"))))
 
 	for i := range 5 {
 		want := []byte{byte('A' + i), byte('0' + i)}
@@ -924,10 +810,7 @@ func TestWriteToMatchesReadAll(t *testing.T) {
 		compressed := w.AppendCompress(nil, src)
 
 		// ReadAll
-		r1, err := NewReader(bytes.NewReader(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r1 := NewReader(bytes.NewReader(compressed))
 		readResult, err := io.ReadAll(r1)
 		r1.Close()
 		if err != nil {
@@ -935,10 +818,7 @@ func TestWriteToMatchesReadAll(t *testing.T) {
 		}
 
 		// WriteTo
-		r2, err := NewReader(bytes.NewReader(compressed))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r2 := NewReader(bytes.NewReader(compressed))
 		var buf bytes.Buffer
 		_, err = r2.WriteTo(&buf)
 		r2.Close()
@@ -961,10 +841,7 @@ func TestWriteToSkippableFrame(t *testing.T) {
 	// Real frame
 	data = append(data, buildRawFrame([]byte("hi"))...)
 
-	r, err := NewReader(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(bytes.NewReader(data))
 	defer r.Close()
 	var buf bytes.Buffer
 	n, err := r.WriteTo(&buf)
@@ -1010,10 +887,7 @@ func TestAppendDecompressConcurrent(t *testing.T) {
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, err := NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := NewReader(nil)
 
 	const goroutines = 8
 	var wg sync.WaitGroup
@@ -1060,7 +934,7 @@ func TestSetMaxWindowSize(t *testing.T) {
 	compressed := w.AppendCompress(nil, src)
 
 	// Decoding with a tiny max window should fail.
-	r, _ := NewReader(bytes.NewReader(compressed))
+	r := NewReader(bytes.NewReader(compressed))
 	if err := r.SetMaxWindowSize(MinWindowSize); err != nil {
 		t.Fatal(err)
 	}
@@ -1080,7 +954,7 @@ func TestSetMaxWindowSizeMax(t *testing.T) {
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
 
-	r, _ := NewReader(bytes.NewReader(compressed))
+	r := NewReader(bytes.NewReader(compressed))
 	if err := r.SetMaxWindowSize(MaxWindowSize); err != nil {
 		t.Fatal(err)
 	}
@@ -1095,7 +969,7 @@ func TestSetMaxWindowSizeMax(t *testing.T) {
 }
 
 func TestSetMaxWindowSizeValidation(t *testing.T) {
-	r, _ := NewReader(nil)
+	r := NewReader(nil)
 	if err := r.SetMaxWindowSize(0); err == nil {
 		t.Fatal("expected error for 0")
 	}
@@ -1122,7 +996,7 @@ func TestReadTruncatedBlockHeader(t *testing.T) {
 	buf = append(buf, 0x05)
 	buf = append(buf, 0x01, 0x00) // only 2 bytes of block header
 
-	r, _ := NewReader(bytes.NewReader(buf))
+	r := NewReader(bytes.NewReader(buf))
 	_, err := io.ReadAll(r)
 	r.Close()
 	if !errors.Is(err, &ErrCorrupted{}) {
@@ -1140,7 +1014,7 @@ func TestReadTruncatedBlockData(t *testing.T) {
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 	buf = append(buf, 'a', 'b') // only 2 of 5 bytes
 
-	r, _ := NewReader(bytes.NewReader(buf))
+	r := NewReader(bytes.NewReader(buf))
 	_, err := io.ReadAll(r)
 	r.Close()
 	if !errors.Is(err, &ErrCorrupted{}) {
@@ -1157,7 +1031,7 @@ func TestReadReservedBlockType(t *testing.T) {
 	bh := uint32(1) | (3 << 1) | (0 << 3)
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 
-	r, _ := NewReader(bytes.NewReader(buf))
+	r := NewReader(bytes.NewReader(buf))
 	_, err := io.ReadAll(r)
 	r.Close()
 	if !errors.Is(err, &ErrCorrupted{}) {
@@ -1178,7 +1052,7 @@ func TestReadWindowSizeTooSmall(t *testing.T) {
 	bh := uint32(1) | (0 << 1) | (0 << 3)
 	buf = append(buf, byte(bh), byte(bh>>8), byte(bh>>16))
 
-	r, _ := NewReader(bytes.NewReader(buf))
+	r := NewReader(bytes.NewReader(buf))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -1195,7 +1069,7 @@ func TestReadReservedFrameHeaderBit(t *testing.T) {
 	// FHD with reserved bit 3 set.
 	buf = append(buf, 0x08)
 
-	r, _ := NewReader(bytes.NewReader(buf))
+	r := NewReader(bytes.NewReader(buf))
 	_, err := io.ReadAll(r)
 	r.Close()
 	if !errors.Is(err, &ErrCorrupted{}) {
@@ -1227,7 +1101,7 @@ func TestReadIOError(t *testing.T) {
 
 	// Truncate so the reader fails mid-block.
 	er := &errReader{data: frame[:len(frame)-5], err: readErr}
-	r, _ := NewReader(er)
+	r := NewReader(er)
 	_, err := io.ReadAll(r)
 	r.Close()
 	if err == nil {
@@ -1250,7 +1124,7 @@ func TestReadMultipleSkippableFrames(t *testing.T) {
 	}
 	buf = append(buf, buildRawFrame([]byte("ok"))...)
 
-	r, _ := NewReader(bytes.NewReader(buf))
+	r := NewReader(bytes.NewReader(buf))
 	got, err := io.ReadAll(r)
 	r.Close()
 	if err != nil {
@@ -1267,7 +1141,7 @@ func TestReadOnlySkippableFrames(t *testing.T) {
 	buf = append(buf, 0x01, 0x00, 0x00, 0x00)
 	buf = append(buf, 0xFF)
 
-	r, _ := NewReader(bytes.NewReader(buf))
+	r := NewReader(bytes.NewReader(buf))
 	_, err := io.ReadAll(r)
 	r.Close()
 	if !errors.Is(err, &ErrCorrupted{}) {
@@ -1282,7 +1156,7 @@ func TestReadSkippableFrameTypes(t *testing.T) {
 		buf = append(buf, 0x00, 0x00, 0x00, 0x00) // 0 bytes to skip
 		buf = append(buf, buildRawFrame([]byte("x"))...)
 
-		r, _ := NewReader(bytes.NewReader(buf))
+		r := NewReader(bytes.NewReader(buf))
 		got, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
@@ -1312,7 +1186,7 @@ func TestAppendDecompressPreExistingDst(t *testing.T) {
 
 func TestAppendDecompressConcurrentDifferentData(t *testing.T) {
 	w := NewWriter(nil)
-	r, _ := NewReader(nil)
+	r := NewReader(nil)
 
 	const goroutines = 8
 	var wg sync.WaitGroup
@@ -1388,7 +1262,7 @@ func TestWriteToCompressedMultiBlock(t *testing.T) {
 		_ = w.SetLevel(level)
 		compressed := w.AppendCompress(nil, src)
 
-		r, _ := NewReader(bytes.NewReader(compressed))
+		r := NewReader(bytes.NewReader(compressed))
 		var buf bytes.Buffer
 		n, err := r.WriteTo(&buf)
 		r.Close()
@@ -1410,7 +1284,7 @@ func TestWriteToPartialWriteError(t *testing.T) {
 	compressed := w.AppendCompress(nil, src)
 
 	writeErr := errors.New("out of space")
-	r, _ := NewReader(bytes.NewReader(compressed))
+	r := NewReader(bytes.NewReader(compressed))
 	// Accept 0 bytes — fail immediately.
 	ew := &errWriter{n: 0, err: writeErr}
 	_, err := r.WriteTo(ew)

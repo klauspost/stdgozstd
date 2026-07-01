@@ -208,7 +208,7 @@ func BenchmarkAppendDecompress(b *testing.B) {
 		pcs := preCompress(benchInputs, lvl.level)
 		for _, pc := range pcs {
 			b.Run(pc.name+"/"+lvl.name, func(b *testing.B) {
-				r, _ := NewReader(nil)
+				r := NewReader(nil)
 				var dst []byte
 				b.SetBytes(int64(len(pc.src)))
 				b.ReportAllocs()
@@ -226,7 +226,7 @@ func BenchmarkRead(b *testing.B) {
 		pcs := preCompress(benchInputs, lvl.level)
 		for _, pc := range pcs {
 			b.Run(pc.name+"/"+lvl.name, func(b *testing.B) {
-				r, _ := NewReader(bytes.NewReader(pc.compressed))
+				r := NewReader(bytes.NewReader(pc.compressed))
 				b.SetBytes(int64(len(pc.src)))
 				b.ResetTimer()
 				for range b.N {
@@ -243,7 +243,7 @@ func BenchmarkWriteTo(b *testing.B) {
 		pcs := preCompress(benchInputs, lvl.level)
 		for _, pc := range pcs {
 			b.Run(pc.name+"/"+lvl.name, func(b *testing.B) {
-				r, _ := NewReader(bytes.NewReader(pc.compressed))
+				r := NewReader(bytes.NewReader(pc.compressed))
 				b.SetBytes(int64(len(pc.src)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -300,7 +300,7 @@ func BenchmarkAppendDecompress_Dict(b *testing.B) {
 		compressed := w.AppendCompress(nil, src)
 
 		b.Run(lvl.name, func(b *testing.B) {
-			r, _ := NewReader(nil)
+			r := NewReader(nil)
 			r.SetRawDict(dict)
 			var dst []byte
 			b.SetBytes(int64(len(src)))
@@ -322,7 +322,7 @@ func BenchmarkNewWriter(b *testing.B) {
 
 func BenchmarkNewReader(b *testing.B) {
 	for range b.N {
-		_, _ = NewReader(nil)
+		_ = NewReader(nil)
 	}
 }
 
@@ -343,7 +343,7 @@ func BenchmarkReaderReuse(b *testing.B) {
 	src := bytes.Repeat([]byte("reuse bench "), 500)
 	w := NewWriter(nil)
 	compressed := w.AppendCompress(nil, src)
-	r, _ := NewReader(bytes.NewReader(compressed))
+	r := NewReader(bytes.NewReader(compressed))
 	b.SetBytes(int64(len(src)))
 	b.ReportAllocs()
 	b.ResetTimer()
