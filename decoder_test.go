@@ -155,6 +155,36 @@ func TestDecoder_AppendDecompress_Concurrent(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+
+	t.Run("zero_value", func(t *testing.T) {
+		src := bytes.Repeat([]byte("zero value concurrent decode "), 200)
+		compressed := NewEncoder().AppendCompress(nil, src)
+		var d Decoder
+
+		const goroutines = 8
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		errs := make(chan error, goroutines)
+
+		for range goroutines {
+			go func() {
+				defer wg.Done()
+				got, err := d.AppendDecompress(nil, compressed)
+				if err != nil {
+					errs <- err
+					return
+				}
+				if !bytes.Equal(got, src) {
+					errs <- bytes.ErrTooLarge
+				}
+			}()
+		}
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestDecoder_SetMaxSize(t *testing.T) {

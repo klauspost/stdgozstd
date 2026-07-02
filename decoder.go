@@ -7,6 +7,7 @@ package zstd
 import (
 	"fmt"
 	"io"
+	"sync"
 )
 
 var defaultDecoderOptions = decoderOptions{
@@ -19,19 +20,17 @@ var defaultDecoderOptions = decoderOptions{
 // of [NewReader] calls; it must not be reconfigured while a bound Reader is
 // mid-stream.
 type Decoder struct {
-	o           decoderOptions
-	dicts       map[uint32]*dict
-	initialized bool
+	o     decoderOptions
+	dicts map[uint32]*dict
+	once  sync.Once
 }
 
 // ensureInit lazily applies default configuration on first use.
 func (d *Decoder) ensureInit() {
-	if d.initialized {
-		return
-	}
-	d.initialized = true
-	initPredefined()
-	d.o = defaultDecoderOptions
+	d.once.Do(func() {
+		initPredefined()
+		d.o = defaultDecoderOptions
+	})
 }
 
 // NewDecoder returns a new Decoder configured with default limits.
@@ -140,6 +139,10 @@ func (d *Decoder) AppendDecompress(dst, src []byte) ([]byte, error) {
 		block.lowMem = d.o.lowMem
 	}
 	defer func() {
+		// Drop references to the caller's src and dst so the pool does not pin
+		// caller-owned buffers between decodes.
+		frame.bBuf = nil
+		frame.history.b = nil
 		frameDecPool.Put(frame)
 		blockDecPool.Put(block)
 	}()

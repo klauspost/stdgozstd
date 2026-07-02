@@ -70,21 +70,19 @@ type Encoder struct {
 	crc       bool
 	lowMem    bool
 
-	dict        *dict
-	initialized bool
+	dict *dict
+	once sync.Once
 }
 
 // ensureInit lazily applies default configuration on first use.
 func (e *Encoder) ensureInit() {
-	if e.initialized {
-		return
-	}
-	e.initialized = true
-	initPredefined()
-	e.level = 3
-	e.blockSize = maxCompressedBlockSize
-	e.wndSize = 4 << 20
-	e.crc = true
+	e.once.Do(func() {
+		initPredefined()
+		e.level = 3
+		e.blockSize = maxCompressedBlockSize
+		e.wndSize = 4 << 20
+		e.crc = true
+	})
 }
 
 // NewEncoder returns a new Encoder configured for the default compression level.

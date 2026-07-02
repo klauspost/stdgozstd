@@ -7,6 +7,7 @@ package zstd
 import (
 	"encoding/binary"
 	"io"
+	"math"
 	"sync"
 
 	"github.com/klauspost/stdgozstd/internal/xxhash"
@@ -176,7 +177,8 @@ func (d *frameDec) reset(br byteBuffer) error {
 	// Reject a frame whose declared content size alone exceeds the limit,
 	// before allocating buffers or decoding any block.
 	if d.o.maxDecodedSize > 0 && d.FrameContentSize != fcsUnknown && d.FrameContentSize > uint64(d.o.maxDecodedSize) {
-		return &ErrDecodedSizeExceeded{Allowed: d.o.maxDecodedSize, Produced: int64(d.FrameContentSize)}
+		// Clamp to avoid int64 overflow when FrameContentSize exceeds MaxInt64.
+		return &ErrDecodedSizeExceeded{Allowed: d.o.maxDecodedSize, Produced: int64(min(d.FrameContentSize, math.MaxInt64))}
 	}
 
 	d.HasCheckSum = fhd&(1<<2) != 0
