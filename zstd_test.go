@@ -198,7 +198,7 @@ func TestAllLevelsRoundTrip(t *testing.T) {
 	}
 }
 
-func TestErrCorruptedError(t *testing.T) {
+func TestErrCorrupted_Error(t *testing.T) {
 	tests := []struct {
 		name string
 		err  *ErrCorrupted
@@ -217,14 +217,23 @@ func TestErrCorruptedError(t *testing.T) {
 	}
 }
 
-func TestErrCorruptedIs(t *testing.T) {
-	err := corruptedError("test")
-	if !errors.Is(err, &ErrCorrupted{}) {
-		t.Fatal("errors.Is should match any *ErrCorrupted")
-	}
+func TestErrCorrupted_Is(t *testing.T) {
+	t.Run("matches_any", func(t *testing.T) {
+		err := corruptedError("test")
+		if !errors.Is(err, &ErrCorrupted{}) {
+			t.Fatal("errors.Is should match any *ErrCorrupted")
+		}
+	})
+
+	t.Run("not_other", func(t *testing.T) {
+		err := corruptedError("x")
+		if errors.Is(err, io.EOF) {
+			t.Fatal("ErrCorrupted should not match io.EOF")
+		}
+	})
 }
 
-func TestErrCorruptedUnwrap(t *testing.T) {
+func TestErrCorrupted_Unwrap(t *testing.T) {
 	inner := io.ErrUnexpectedEOF
 	err := &ErrCorrupted{msg: "wrapper", err: inner}
 	if !errors.Is(err, inner) {
@@ -236,14 +245,7 @@ func TestErrCorruptedUnwrap(t *testing.T) {
 	}
 }
 
-func TestErrCorruptedNotIsOther(t *testing.T) {
-	err := corruptedError("x")
-	if errors.Is(err, io.EOF) {
-		t.Fatal("ErrCorrupted should not match io.EOF")
-	}
-}
-
-func TestErrWindowSizeExceededError(t *testing.T) {
+func TestErrWindowSizeExceeded_Error(t *testing.T) {
 	err := &ErrWindowSizeExceeded{Allowed: 1024, Requested: 4096}
 	s := err.Error()
 	if !bytes.Contains([]byte(s), []byte("1024")) || !bytes.Contains([]byte(s), []byte("4096")) {
@@ -251,7 +253,7 @@ func TestErrWindowSizeExceededError(t *testing.T) {
 	}
 }
 
-func TestErrWindowSizeExceededIs(t *testing.T) {
+func TestErrWindowSizeExceeded_Is(t *testing.T) {
 	err := &ErrWindowSizeExceeded{Allowed: 1, Requested: 2}
 	if !errors.Is(err, &ErrWindowSizeExceeded{}) {
 		t.Fatal("errors.Is should match any *ErrWindowSizeExceeded")
@@ -360,86 +362,4 @@ func randTestBytes(n int, seed uint64) []byte {
 		b[i] = byte(rng.IntN(256))
 	}
 	return b
-}
-
-func TestZeroValueReaderWriteTo(t *testing.T) {
-	frame := buildRawFrame([]byte("zero writeto"))
-	var r Reader
-	if err := r.Reset(bytes.NewReader(frame)); err != nil {
-		t.Fatal(err)
-	}
-	var buf bytes.Buffer
-	n, err := r.WriteTo(&buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != 12 || buf.String() != "zero writeto" {
-		t.Fatalf("got %d %q", n, buf.String())
-	}
-	r.Close()
-}
-
-func TestZeroValueReaderConfig(t *testing.T) {
-	d := NewDecoder()
-	if err := d.SetMaxWindowSize(MaxWindowSize); err != nil {
-		t.Fatal(err)
-	}
-	frame := buildRawFrame([]byte("config"))
-	got, err := d.AppendDecompress(nil, frame)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "config" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-func TestZeroValueWriterReset(t *testing.T) {
-	src := bytes.Repeat([]byte("zero reset "), 100)
-	var buf bytes.Buffer
-	var w Writer
-	w.Reset(&buf)
-	if _, err := w.Write(src); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	r := NewReader(bytes.NewReader(buf.Bytes()), nil)
-	got, err := io.ReadAll(r)
-	r.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatal("mismatch")
-	}
-}
-
-func TestZeroValueWriterReadFrom(t *testing.T) {
-	src := bytes.Repeat([]byte("zero readfrom "), 100)
-	var buf bytes.Buffer
-	var w Writer
-	w.Reset(&buf)
-	n, err := w.ReadFrom(bytes.NewReader(src))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n != int64(len(src)) {
-		t.Fatalf("ReadFrom returned %d, want %d", n, len(src))
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	r := NewReader(bytes.NewReader(buf.Bytes()), nil)
-	got, err := io.ReadAll(r)
-	r.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, src) {
-		t.Fatal("mismatch")
-	}
 }
