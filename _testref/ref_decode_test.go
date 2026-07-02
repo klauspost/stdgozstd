@@ -232,7 +232,7 @@ func TestRefLiteDecodeReset(t *testing.T) {
 	c1 := refEncode(t, src1)
 	c2 := refEncode(t, src2)
 
-	r := zstd.NewReader(bytes.NewReader(c1))
+	r := zstd.NewReader(bytes.NewReader(c1), nil)
 	defer r.Close()
 	got1, err := readAll(r)
 	if err != nil {
@@ -258,9 +258,10 @@ func TestRefLiteDecodeMaxWindowSize(t *testing.T) {
 	compressed := refEncode(t, src, ref.WithWindowSize(8<<20))
 
 	// Try to decode with a small max window — should fail.
-	r := zstd.NewReader(bytes.NewReader(compressed))
+	dec := zstd.NewDecoder()
+	dec.SetMaxWindowSize(1 << 10)
+	r := zstd.NewReader(bytes.NewReader(compressed), dec)
 	defer r.Close()
-	r.SetMaxWindowSize(1 << 10)
 	_, err := readAll(r)
 	if err == nil {
 		t.Error("expected error for small max window size, got nil")

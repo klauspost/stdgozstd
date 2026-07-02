@@ -44,6 +44,7 @@ const (
 
 // Decoder object pools for reuse across blocks.
 var (
+	blockDecPool    sync.Pool
 	huffDecoderPool = sync.Pool{New: func() any { return &huff0.Scratch{} }}
 	fseDecoderPool  = sync.Pool{New: func() any { return &fseDecoder{} }}
 )

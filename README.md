@@ -19,7 +19,7 @@ Browse documentation: [![Go Reference](https://pkg.go.dev/badge/github.com/klaus
 * Simplified errors.
 * Dictionary code simplified.
 * All "unsafe" removed.
-* Allows using the zero value Reader/Writer (not proposed explicitly, but seems reasonable).
+* Allows using the zero value Encoder/Decoder/Reader/Writer (not proposed explicitly, but seems reasonable).
 
 ## Additions to proposal
 
@@ -53,8 +53,48 @@ Supporting `io.WriterTo` and `io.ReaderFrom` on `Writer` and `Reader`:
 
 Bytes interface:
 
-* Added `(*Writer).AppendCompress(dst, src []byte) []byte`
-* Added `(*Reader).AppendDecompress(dst, src []byte) ([]byte, error)`
+* Added `(*Encoder).AppendCompress(dst, src []byte) []byte`
+* Added `(*Decoder).AppendDecompress(dst, src []byte) ([]byte, error)`
+
+## Configuration split: Encoder / Decoder
+
+Configuration and the one-shot byte operations live on two config types, so a
+stream's settings can be prepared and reused independently of any single stream:
+
+```go
+type Encoder struct{ /* no exported fields */ }
+func NewEncoder() *Encoder
+func (*Encoder) SetLevel(int) error
+func (*Encoder) SetWindowSize(int) error
+func (*Encoder) SetLowMemory(bool)
+func (*Encoder) SetCRC(bool)
+func (*Encoder) AddDict(*Dict)
+func (*Encoder) SetRawDict([]byte)
+func (*Encoder) AppendCompress(dst, src []byte) []byte
+
+type Decoder struct{ /* no exported fields */ }
+func NewDecoder() *Decoder
+func (*Decoder) SetMaxSize(int64) error       // total decompressed-output cap; 0 = unlimited
+func (*Decoder) SetMaxWindowSize(int) error
+func (*Decoder) AddDict(*Dict)
+func (*Decoder) SetRawDict([]byte)
+func (*Decoder) AppendDecompress(dst, src []byte) ([]byte, error)
+```
+
+The streaming `Writer`/`Reader` are bound to a config object; a nil argument
+uses default configuration:
+
+```go
+func NewWriter(w io.Writer, e *Encoder) *Writer
+func NewReader(r io.Reader, d *Decoder) *Reader
+```
+
+One `Encoder`/`Decoder` may configure many `Writer`/`Reader` values. It must not
+be reconfigured while a bound `Writer`/`Reader` is mid-stream; reconfigure
+between streams (before the first write, or after `Close`, then `Reset`).
+
+`(*Decoder).SetMaxSize(n)` caps the total number of decompressed bytes as a
+decompression-bomb guard. The default, 0, disables the limit.
 
 # Pre-PR
 

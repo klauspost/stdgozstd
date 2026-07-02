@@ -30,13 +30,13 @@ func BenchmarkAppendTo(b *testing.B) {
 	for _, level := range levels {
 		for name, data := range datasets {
 			b.Run(fmt.Sprintf("lite/level-%d/%s", level, name), func(b *testing.B) {
-				w := zstd.NewWriter(nil)
-				w.SetLevel(level)
+				e := zstd.NewEncoder()
+				e.SetLevel(level)
 				buf := make([]byte, 0, len(data))
 				b.SetBytes(int64(len(data)))
 				b.ResetTimer()
 				for range b.N {
-					w.AppendCompress(buf[:0], data)
+					e.AppendCompress(buf[:0], data)
 				}
 			})
 			b.Run(fmt.Sprintf("ref/level-%d/%s", level, name), func(b *testing.B) {
@@ -61,8 +61,9 @@ func BenchmarkStreamEncode(b *testing.B) {
 
 	for _, level := range levels {
 		b.Run(fmt.Sprintf("lite/level-%d/medium", level), func(b *testing.B) {
-			w := zstd.NewWriter(nil)
-			w.SetLevel(level)
+			e := zstd.NewEncoder()
+			e.SetLevel(level)
+			w := zstd.NewWriter(nil, e)
 			var buf bytes.Buffer
 			b.SetBytes(int64(len(medium)))
 			b.ResetTimer()
@@ -100,13 +101,12 @@ func BenchmarkAppendDecompress(b *testing.B) {
 			compressed := liteEncode(b, data, level)
 
 			b.Run(fmt.Sprintf("lite/level-%d/%s", level, name), func(b *testing.B) {
-				r := zstd.NewReader(bytes.NewReader([]byte{0x28, 0xb5, 0x2f, 0xfd, 0x04, 0x00, 0x01, 0x00, 0x00}))
-				defer r.Close()
+				dec := zstd.NewDecoder()
 				buf := make([]byte, 0, len(data))
 				b.SetBytes(int64(len(data)))
 				b.ResetTimer()
 				for range b.N {
-					r.AppendDecompress(buf[:0], compressed)
+					dec.AppendDecompress(buf[:0], compressed)
 				}
 			})
 			b.Run(fmt.Sprintf("ref/level-%d/%s", level, name), func(b *testing.B) {
@@ -137,7 +137,7 @@ func BenchmarkStreamDecode(b *testing.B) {
 			b.SetBytes(int64(len(medium)))
 			b.ResetTimer()
 			for range b.N {
-				r := zstd.NewReader(bytes.NewReader(compressed))
+				r := zstd.NewReader(bytes.NewReader(compressed), nil)
 				io.ReadAll(r)
 				r.Close()
 			}

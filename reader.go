@@ -5,36 +5,25 @@
 package zstd
 
 import (
-	"fmt"
 	"io"
-	"sync"
 )
 
 var _ io.WriterTo = (*Reader)(nil)
 
-var (
-	frameDecPool sync.Pool
-	blockDecPool sync.Pool
-)
-
 // Reader decompresses a zstd-compressed stream.
 type Reader struct {
+	cfg   *Decoder
 	frame *frameDec
 	block *blockDec
 	rw    readerWrapper
 
-	buf          []byte
-	dicts        map[uint32]*dict
-	decodedCount uint64
-	inFrame      bool
-	frameSeen    bool
-	err          error
-	initialized  bool
-}
-
-var defaultDecoderOptions = decoderOptions{
-	maxWindowSize: 128 << 20,
-	lowMem:        true,
+	buf           []byte
+	decodedCount  uint64
+	nDecodedTotal int64
+	inFrame       bool
+	frameSeen     bool
+	err           error
+	initialized   bool
 }
 
 // ensureInit lazily initializes the Reader on first use.
@@ -42,27 +31,36 @@ func (z *Reader) ensureInit() {
 	if z.initialized {
 		return
 	}
+	if z.cfg == nil {
+		z.cfg = NewDecoder()
+	}
+	z.cfg.ensureInit()
 	z.initialized = true
 	initPredefined()
 	if frame, _ := frameDecPool.Get().(*frameDec); frame != nil {
-		frame.o = defaultDecoderOptions
+		frame.o = z.cfg.o
 		z.frame = frame
 	} else {
-		z.frame = newFrameDec(defaultDecoderOptions)
+		z.frame = newFrameDec(z.cfg.o)
 	}
 	if block, _ := blockDecPool.Get().(*blockDec); block != nil {
-		block.lowMem = true
+		block.lowMem = z.cfg.o.lowMem
 		z.block = block
 	} else {
-		z.block = &blockDec{lowMem: true}
+		z.block = &blockDec{lowMem: z.cfg.o.lowMem}
 	}
 }
 
-// NewReader creates a new Reader reading from r.
-// If r is nil, the Reader may only be used with [Reader.AppendDecompress];
-// call [Reader.Reset] before streaming.
-func NewReader(r io.Reader) *Reader {
-	z := &Reader{}
+// NewReader creates a new Reader that decompresses from r using the
+// configuration held by d. If d is nil, default configuration is used.
+// If r is nil, the Reader must be pointed at a source with [Reader.Reset]
+// before streaming.
+func NewReader(r io.Reader, d *Decoder) *Reader {
+	if d == nil {
+		d = NewDecoder()
+	}
+	d.ensureInit()
+	z := &Reader{cfg: d}
 	z.ensureInit()
 	if r != nil {
 		z.rw.r = r
@@ -84,6 +82,7 @@ func (z *Reader) Reset(r io.Reader) error {
 	z.frameSeen = false
 	z.err = nil
 	z.decodedCount = 0
+	z.nDecodedTotal = 0
 	z.frame.history.reset()
 	return nil
 }
@@ -108,6 +107,7 @@ func (z *Reader) Read(p []byte) (int, error) {
 
 		// Start a new frame if needed.
 		if !z.inFrame {
+			z.frame.o = z.cfg.o
 			err := z.frame.reset(&z.rw)
 			if err != nil {
 				if err == io.EOF {
@@ -130,13 +130,13 @@ func (z *Reader) Read(p []byte) (int, error) {
 			z.frame.history.reset()
 
 			if z.frame.DictionaryID != 0 {
-				d, ok := z.dicts[z.frame.DictionaryID]
+				d, ok := z.cfg.dicts[z.frame.DictionaryID]
 				if !ok {
 					z.err = ErrUnknownDictionary
 					return written, z.err
 				}
 				z.frame.history.setDict(d)
-			} else if d, ok := z.dicts[0]; ok {
+			} else if d, ok := z.cfg.dicts[0]; ok {
 				// Raw dict (ID 0): only use content for match references.
 				z.frame.history.dict = d
 				z.frame.history.decoders.dict = d.content
@@ -159,6 +159,11 @@ func (z *Reader) Read(p []byte) (int, error) {
 
 		decoded := z.frame.history.b[prevLen:]
 		z.decodedCount += uint64(len(decoded))
+		z.nDecodedTotal += int64(len(decoded))
+		if m := z.frame.o.maxDecodedSize; m > 0 && z.nDecodedTotal > m {
+			z.err = &ErrDecodedSizeExceeded{Allowed: m, Produced: z.nDecodedTotal}
+			return written, z.err
+		}
 
 		if z.frame.HasCheckSum {
 			_, _ = z.frame.crc.Write(decoded)
@@ -184,82 +189,6 @@ func (z *Reader) Read(p []byte) (int, error) {
 	return written, nil
 }
 
-// AppendDecompress decompresses src and appends the decompressed bytes to dst,
-// returning the extended buffer. It is a one-shot alternative to the streaming
-// Read interface.
-//
-// src may contain one or more concatenated zstd frames.
-//
-// The Reader must not be in the middle of a streaming Read; call Reset
-// before switching from streaming to one-shot use.
-//
-// Passing nil for dst allocates a new slice. Passing a non-nil dst lets the
-// caller reuse memory or prepend existing data:
-//
-//	result, err := r.AppendDecompress(existingPrefix, compressed)
-//
-// Any registered dictionaries (via AddDict or SetRawDict) apply.
-//
-// AppendDecompress is safe for concurrent use on the same Reader,
-// provided configuration methods are not called concurrently.
-func (z *Reader) AppendDecompress(dst, src []byte) ([]byte, error) {
-	z.ensureInit()
-	if z.err == ErrDecoderClosed {
-		return nil, ErrDecoderClosed
-	}
-
-	frame, _ := frameDecPool.Get().(*frameDec)
-	if frame == nil {
-		frame = newFrameDec(z.frame.o)
-	} else {
-		frame.o = z.frame.o
-	}
-	block, _ := blockDecPool.Get().(*blockDec)
-	if block == nil {
-		block = &blockDec{lowMem: z.frame.o.lowMem}
-	} else {
-		block.lowMem = z.frame.o.lowMem
-	}
-	defer func() {
-		frameDecPool.Put(frame)
-		blockDecPool.Put(block)
-	}()
-
-	frame.bBuf = byteBuf(src)
-	var frameSeen bool
-	for {
-		err := frame.reset(&frame.bBuf)
-		if err == io.EOF {
-			if !frameSeen {
-				return dst, &ErrCorrupted{msg: "empty input", err: io.ErrUnexpectedEOF}
-			}
-			return dst, nil
-		}
-		if err != nil {
-			return dst, err
-		}
-		frameSeen = true
-		frame.history.reset()
-
-		if frame.DictionaryID != 0 {
-			d, ok := z.dicts[frame.DictionaryID]
-			if !ok {
-				return dst, ErrUnknownDictionary
-			}
-			frame.history.setDict(d)
-		} else if d, ok := z.dicts[0]; ok {
-			frame.history.dict = d
-			frame.history.decoders.dict = d.content
-		}
-
-		var err2 error
-		dst, err2 = frame.runDecoder(dst, block)
-		if err2 != nil {
-			return dst, err2
-		}
-	}
-}
-
 // Close releases resources but retains configuration.
 // After Close, the Reader may be reused by calling
 // [Reader.Reset].
@@ -274,55 +203,6 @@ func (z *Reader) Close() error {
 	z.block = nil
 	z.initialized = false
 	return nil
-}
-
-// SetMaxWindowSize sets the maximum allowed window size for decoding.
-// The default is 128 MiB.
-//
-// n must be in the range [MinWindowSize, MaxWindowSize].
-func (z *Reader) SetMaxWindowSize(n int) error {
-	z.ensureInit()
-	if n < MinWindowSize || n > MaxWindowSize {
-		return fmt.Errorf("zstd: max window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
-	}
-	z.frame.o.maxWindowSize = n
-	return nil
-}
-
-// AddDict registers a dictionary for decompression.
-// Passing nil removes all previously registered dictionaries.
-// A non-nil Dict that was not created by [ParseDict] is ignored.
-func (z *Reader) AddDict(d *Dict) {
-	z.ensureInit()
-	if d == nil || d.d == nil {
-		if d == nil {
-			clear(z.dicts)
-			return
-		}
-		return
-	}
-	if z.dicts == nil {
-		z.dicts = make(map[uint32]*dict)
-	}
-	z.dicts[d.d.id] = d.d
-}
-
-// SetRawDict registers raw bytes as a dictionary with ID 0.
-// The dictionary must be at least 8 bytes; shorter values are ignored.
-// Passing nil removes all previously registered dictionaries.
-func (z *Reader) SetRawDict(b []byte) {
-	z.ensureInit()
-	if b == nil {
-		clear(z.dicts)
-		return
-	}
-	if len(b) < 8 {
-		return
-	}
-	if z.dicts == nil {
-		z.dicts = make(map[uint32]*dict)
-	}
-	z.dicts[0] = &dict{id: 0, content: b, offsets: [3]int{1, 4, 8}}
 }
 
 // WriteTo decompresses data and writes it to w until all frames are consumed
@@ -354,6 +234,7 @@ func (z *Reader) WriteTo(w io.Writer) (int64, error) {
 
 	for {
 		if !z.inFrame {
+			z.frame.o = z.cfg.o
 			err := z.frame.reset(&z.rw)
 			if err != nil {
 				if err == io.EOF {
@@ -372,13 +253,13 @@ func (z *Reader) WriteTo(w io.Writer) (int64, error) {
 			z.frame.history.reset()
 
 			if z.frame.DictionaryID != 0 {
-				d, ok := z.dicts[z.frame.DictionaryID]
+				d, ok := z.cfg.dicts[z.frame.DictionaryID]
 				if !ok {
 					z.err = ErrUnknownDictionary
 					return written, z.err
 				}
 				z.frame.history.setDict(d)
-			} else if d, ok := z.dicts[0]; ok {
+			} else if d, ok := z.cfg.dicts[0]; ok {
 				z.frame.history.dict = d
 				z.frame.history.decoders.dict = d.content
 			}
@@ -398,6 +279,11 @@ func (z *Reader) WriteTo(w io.Writer) (int64, error) {
 
 		decoded := z.frame.history.b[prevLen:]
 		z.decodedCount += uint64(len(decoded))
+		z.nDecodedTotal += int64(len(decoded))
+		if m := z.frame.o.maxDecodedSize; m > 0 && z.nDecodedTotal > m {
+			z.err = &ErrDecodedSizeExceeded{Allowed: m, Produced: z.nDecodedTotal}
+			return written, z.err
+		}
 
 		if z.frame.HasCheckSum {
 			_, _ = z.frame.crc.Write(decoded)
