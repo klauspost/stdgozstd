@@ -158,7 +158,7 @@ func (d *frameDec) reset(br byteBuffer) error {
 		case 1:
 			d.FrameContentSize = uint64(b[0])
 		case 2:
-			d.FrameContentSize = uint64(b[0]) | (uint64(b[1]) << 8) + 256
+			d.FrameContentSize = (uint64(b[0]) | (uint64(b[1]) << 8)) + 256
 		case 4:
 			d.FrameContentSize = uint64(b[0]) | (uint64(b[1]) << 8) | (uint64(b[2]) << 16) | (uint64(b[3]) << 24)
 		case 8:
