@@ -58,23 +58,28 @@ func refDecode(t testing.TB, compressed []byte, opts ...ref.DOption) []byte {
 
 func liteEncode(t testing.TB, src []byte, level int) []byte {
 	t.Helper()
-	e := zstd.NewEncoder()
-	if err := e.SetLevel(level); err != nil {
+	e, err := zstd.NewEncoder(zstd.WithEncoderLevel(level))
+	if err != nil {
 		t.Fatal(err)
 	}
 	return e.AppendCompress(nil, src)
 }
 
-func liteEncodeOpts(t testing.TB, src []byte, setup func(*zstd.Encoder)) []byte {
+func liteEncodeOpts(t testing.TB, src []byte, opts ...zstd.EncoderOption) []byte {
 	t.Helper()
-	e := zstd.NewEncoder()
-	setup(e)
+	e, err := zstd.NewEncoder(opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return e.AppendCompress(nil, src)
 }
 
 func liteDecode(t testing.TB, compressed []byte) []byte {
 	t.Helper()
-	d := zstd.NewDecoder()
+	d, err := zstd.NewDecoder()
+	if err != nil {
+		t.Fatal(err)
+	}
 	got, err := d.AppendDecompress(nil, compressed)
 	if err != nil {
 		t.Fatal(err)
@@ -82,11 +87,12 @@ func liteDecode(t testing.TB, compressed []byte) []byte {
 	return got
 }
 
-func liteDecodeOpts(t testing.TB, compressed []byte, setup func(*zstd.Decoder)) []byte {
+func liteDecodeOpts(t testing.TB, compressed []byte, opts ...zstd.DecoderOption) []byte {
 	t.Helper()
-	d := zstd.NewDecoder()
-	setup(d)
-	r := zstd.NewReader(bytes.NewReader(compressed), d)
+	r, err := zstd.NewReader(bytes.NewReader(compressed), opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
 	got, err := io.ReadAll(r)
 	if err != nil {

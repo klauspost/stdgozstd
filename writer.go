@@ -33,25 +33,25 @@ type Writer struct {
 // ensureInit lazily initializes the Writer on first use.
 func (w *Writer) ensureInit() {
 	if w.cfg == nil {
-		w.cfg = NewEncoder()
+		w.cfg = &Encoder{}
 	}
 	w.cfg.ensureInit()
 }
 
 // NewWriter returns a new Writer that compresses data written to w using the
-// configuration held by e. If e is nil, default configuration is used.
+// configuration built from opts. With no options, default configuration is used.
 // If w is nil the Writer must be pointed at a destination with [Writer.Reset]
 // before streaming.
-func NewWriter(w io.Writer, e *Encoder) *Writer {
-	if e == nil {
-		e = NewEncoder()
+func NewWriter(w io.Writer, opts ...EncoderOption) (*Writer, error) {
+	e, err := NewEncoder(opts...)
+	if err != nil {
+		return nil, err
 	}
-	e.ensureInit()
 	wr := &Writer{cfg: e}
 	if w != nil {
 		wr.Reset(w)
 	}
-	return wr
+	return wr, nil
 }
 
 // ResetContentSize resets the Writer for a new stream to wr and records

@@ -15,7 +15,7 @@ import (
 func roundTrip(t *testing.T, src []byte) {
 	t.Helper()
 	var buf bytes.Buffer
-	w := NewWriter(&buf, nil)
+	w := mustWriter(t, &buf)
 	_, err := w.Write(src)
 	if err != nil {
 		t.Fatal("write:", err)
@@ -24,7 +24,7 @@ func roundTrip(t *testing.T, src []byte) {
 		t.Fatal("close:", err)
 	}
 
-	r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+	r := mustReader(t, bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -38,14 +38,14 @@ func roundTrip(t *testing.T, src []byte) {
 func TestWriter_Write(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
 		}
 		if buf.Len() == 0 {
 			t.Fatal("expected non-empty frame for empty input")
 		}
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer r.Close()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -114,7 +114,7 @@ func TestWriter_Write(t *testing.T) {
 		src = bytes.Repeat(src, 100)
 
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		for i := 0; i < len(src); i += 7 {
 			end := min(i+7, len(src))
 			_, err := w.Write(src[i:end])
@@ -126,7 +126,7 @@ func TestWriter_Write(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -141,7 +141,7 @@ func TestWriter_Write(t *testing.T) {
 		src := []byte("byte by byte writing test, long enough to have content")
 
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		for _, b := range src {
 			_, err := w.Write([]byte{b})
 			if err != nil {
@@ -152,7 +152,7 @@ func TestWriter_Write(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -166,14 +166,14 @@ func TestWriter_Write(t *testing.T) {
 	t.Run("crc_enabled", func(t *testing.T) {
 		src := []byte("checksum test data")
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		_, _ = w.Write(src)
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
 		}
 
 		// Verify readable (CRC checked by reader).
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -187,16 +187,14 @@ func TestWriter_Write(t *testing.T) {
 	t.Run("no_crc", func(t *testing.T) {
 		src := []byte("no checksum test data, slightly longer to be interesting")
 		var buf bytes.Buffer
-		e := NewEncoder()
-		e.SetCRC(false)
-		w := NewWriter(&buf, e)
+		w := mustWriter(t, &buf, WithEncoderCRC(false))
 		w.Reset(&buf)
 		_, _ = w.Write(src)
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -211,7 +209,7 @@ func TestWriter_Write(t *testing.T) {
 		src := bytes.Repeat([]byte("small buffer read test "), 200)
 
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
 		}
@@ -219,7 +217,7 @@ func TestWriter_Write(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer func() { _ = r.Close() }()
 
 		// Read in small chunks.
@@ -244,7 +242,7 @@ func TestWriter_Write(t *testing.T) {
 func TestWriter_Write_Count(t *testing.T) {
 	src := []byte("verify write count returns correct values")
 	var buf bytes.Buffer
-	w := NewWriter(&buf, nil)
+	w := mustWriter(t, &buf)
 
 	n, err := w.Write(src[:10])
 	if err != nil || n != 10 {
@@ -261,7 +259,7 @@ func TestWriter_Write_Count(t *testing.T) {
 
 func TestWriter_Write_AfterClose(t *testing.T) {
 	var buf bytes.Buffer
-	w := NewWriter(&buf, nil)
+	w := mustWriter(t, &buf)
 	_, _ = w.Write([]byte("data"))
 	_ = w.Close()
 
@@ -273,7 +271,7 @@ func TestWriter_Write_AfterClose(t *testing.T) {
 
 func TestWriter_Close(t *testing.T) {
 	var buf bytes.Buffer
-	w := NewWriter(&buf, nil)
+	w := mustWriter(t, &buf)
 	_, _ = w.Write([]byte("data"))
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -289,7 +287,7 @@ func TestWriter_Reset(t *testing.T) {
 	src2 := []byte("second stream content after reset")
 
 	var buf1, buf2 bytes.Buffer
-	w := NewWriter(&buf1, nil)
+	w := mustWriter(t, &buf1)
 	_, _ = w.Write(src1)
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
@@ -309,7 +307,7 @@ func TestWriter_Reset(t *testing.T) {
 		{buf1.Bytes(), src1},
 		{buf2.Bytes(), src2},
 	} {
-		r := NewReader(bytes.NewReader(tc.compressed), nil)
+		r := mustReader(t, bytes.NewReader(tc.compressed))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -324,7 +322,7 @@ func TestWriter_Reset(t *testing.T) {
 func TestWriter_Flush(t *testing.T) {
 	t.Run("interleaved", func(t *testing.T) {
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		part1 := []byte("first part of data. ")
 		part2 := []byte("second part of data.")
 
@@ -348,7 +346,7 @@ func TestWriter_Flush(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -362,7 +360,7 @@ func TestWriter_Flush(t *testing.T) {
 
 	t.Run("empty", func(t *testing.T) {
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		if err := w.Flush(); err != nil {
 			t.Fatal(err)
 		}
@@ -371,7 +369,7 @@ func TestWriter_Flush(t *testing.T) {
 
 	t.Run("multiple", func(t *testing.T) {
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 
 		parts := []string{"alpha.", "beta.", "gamma."}
 		for _, p := range parts {
@@ -386,7 +384,7 @@ func TestWriter_Flush(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
@@ -420,7 +418,7 @@ func TestWriter_ReadFrom(t *testing.T) {
 		src := bytes.Repeat([]byte("ReadFrom test data! "), 1000)
 
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		n, err := w.ReadFrom(bytes.NewReader(src))
 		if err != nil {
 			t.Fatal(err)
@@ -432,7 +430,7 @@ func TestWriter_ReadFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -445,7 +443,7 @@ func TestWriter_ReadFrom(t *testing.T) {
 
 	t.Run("empty", func(t *testing.T) {
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		n, err := w.ReadFrom(bytes.NewReader(nil))
 		if err != nil {
 			t.Fatal(err)
@@ -457,7 +455,7 @@ func TestWriter_ReadFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
@@ -471,7 +469,7 @@ func TestWriter_ReadFrom(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		readErr := errors.New("source error")
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		_, err := w.ReadFrom(&limitedErrReader{n: 100, err: readErr})
 		if err != readErr {
 			t.Fatalf("expected readErr, got %v", err)
@@ -485,7 +483,7 @@ func TestWriter_ReadFrom(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		n, err := w.ReadFrom(bytes.NewReader(src))
 		if err != nil {
 			t.Fatal(err)
@@ -497,7 +495,7 @@ func TestWriter_ReadFrom(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
@@ -513,7 +511,7 @@ func TestWriter_ResetContentSize(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		src := []byte("content size test data, exactly this long")
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		w.ResetContentSize(&buf, int64(len(src)))
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
@@ -522,7 +520,7 @@ func TestWriter_ResetContentSize(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
@@ -536,7 +534,7 @@ func TestWriter_ResetContentSize(t *testing.T) {
 	t.Run("negative", func(t *testing.T) {
 		src := []byte("negative content size means unknown")
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		w.ResetContentSize(&buf, -1)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
@@ -545,7 +543,7 @@ func TestWriter_ResetContentSize(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
@@ -558,7 +556,7 @@ func TestWriter_ResetContentSize(t *testing.T) {
 
 	t.Run("mismatch", func(t *testing.T) {
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		w.ResetContentSize(&buf, 100)
 		if _, err := w.Write([]byte("short")); err != nil {
 			t.Fatal(err)
@@ -573,11 +571,7 @@ func TestWriter_ResetContentSize(t *testing.T) {
 func roundTripLevel(t *testing.T, src []byte, level int) {
 	t.Helper()
 	var buf bytes.Buffer
-	e := NewEncoder()
-	if err := e.SetLevel(level); err != nil {
-		t.Fatal(err)
-	}
-	w := NewWriter(&buf, e)
+	w := mustWriter(t, &buf, WithEncoderLevel(level))
 	w.Reset(&buf)
 	if _, err := w.Write(src); err != nil {
 		t.Fatal("write:", err)
@@ -586,7 +580,7 @@ func roundTripLevel(t *testing.T, src []byte, level int) {
 		t.Fatal("close:", err)
 	}
 
-	r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+	r := mustReader(t, bytes.NewReader(buf.Bytes()))
 	defer func() { _ = r.Close() }()
 	got, err := io.ReadAll(r)
 	if err != nil {
@@ -689,7 +683,7 @@ func TestWriter_ZeroValue(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer r.Close()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -716,7 +710,7 @@ func TestWriter_ZeroValue(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {

@@ -58,42 +58,48 @@ Bytes interface:
 
 ## Configuration split: Encoder / Decoder
 
-Configuration and the one-shot byte operations live on two config types, so a
-stream's settings can be prepared and reused independently of any single stream:
+Configuration is supplied through functional options that are shared by each
+side's constructors: the same `EncoderOption` values configure `NewEncoder`
+(one-shot) and `NewWriter` (streaming); likewise `DecoderOption` for
+`NewDecoder` and `NewReader`. Configuration is fixed at construction and
+immutable afterwards.
 
 ```go
 type Encoder struct{ /* no exported fields */ }
-func NewEncoder() *Encoder
-func (*Encoder) SetLevel(int) error
-func (*Encoder) SetWindowSize(int) error
-func (*Encoder) SetLowMemory(bool)
-func (*Encoder) SetCRC(bool)
-func (*Encoder) AddDict(*Dict)
-func (*Encoder) SetRawDict([]byte)
+type EncoderOption func(*Encoder) error
+func NewEncoder(opts ...EncoderOption) (*Encoder, error)
+func WithEncoderLevel(int) EncoderOption
+func WithWindowSize(int) EncoderOption
+func WithLowMemory(bool) EncoderOption
+func WithEncoderCRC(bool) EncoderOption
+func WithEncoderDict(*Dict) EncoderOption
+func WithEncoderRawDict([]byte) EncoderOption
 func (*Encoder) AppendCompress(dst, src []byte) []byte
 
 type Decoder struct{ /* no exported fields */ }
-func NewDecoder() *Decoder
-func (*Decoder) SetMaxSize(int64) error       // total decompressed-output cap; 0 = unlimited
-func (*Decoder) SetMaxWindowSize(int) error
-func (*Decoder) AddDict(*Dict)
-func (*Decoder) SetRawDict([]byte)
+type DecoderOption func(*Decoder) error
+func NewDecoder(opts ...DecoderOption) (*Decoder, error)
+func WithDecoderMaxSize(int64) DecoderOption    // total decompressed-output cap; 0 = unlimited
+func WithDecoderMaxWindow(int) DecoderOption
+func WithDecoderDict(*Dict) DecoderOption
+func WithDecoderRawDict([]byte) DecoderOption
 func (*Decoder) AppendDecompress(dst, src []byte) ([]byte, error)
 ```
 
-The streaming `Writer`/`Reader` are bound to a config object; a nil argument
-uses default configuration:
+The streaming `Writer`/`Reader` take the same options; with no options they use
+default configuration:
 
 ```go
-func NewWriter(w io.Writer, e *Encoder) *Writer
-func NewReader(r io.Reader, d *Decoder) *Reader
+func NewWriter(w io.Writer, opts ...EncoderOption) (*Writer, error)
+func NewReader(r io.Reader, opts ...DecoderOption) (*Reader, error)
 ```
 
-One `Encoder`/`Decoder` may configure many `Writer`/`Reader` values. It must not
-be reconfigured while a bound `Writer`/`Reader` is mid-stream; reconfigure
-between streams (before the first write, or after `Close`, then `Reset`).
+Options are applied in order, so a later option overrides an earlier one (e.g.
+`WithWindowSize` after `WithEncoderLevel`). To use different settings, construct
+a new `Encoder`/`Writer` (or `Decoder`/`Reader`); `Reset` swaps the
+destination/source and preserves the configuration.
 
-`(*Decoder).SetMaxSize(n)` caps the total number of decompressed bytes as a
+`WithDecoderMaxSize(n)` caps the total number of decompressed bytes as a
 decompression-bomb guard. The default, 0, disables the limit.
 
 # Pre-PR

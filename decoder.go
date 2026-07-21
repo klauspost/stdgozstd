@@ -16,9 +16,8 @@ var defaultDecoderOptions = decoderOptions{
 }
 
 // Decoder holds decompression configuration and provides one-shot decompression
-// via [Decoder.AppendDecompress]. A single Decoder may be passed to any number
-// of [NewReader] calls; it must not be reconfigured while a bound Reader is
-// mid-stream.
+// via [Decoder.AppendDecompress]. Configuration is fixed at construction via
+// [DecoderOption] values and is immutable afterwards.
 type Decoder struct {
 	o     decoderOptions
 	dicts map[uint32]*dict
@@ -33,27 +32,39 @@ func (d *Decoder) ensureInit() {
 	})
 }
 
-// NewDecoder returns a new Decoder configured with default limits.
-func NewDecoder() *Decoder {
+// NewDecoder returns a new Decoder configured by opts. Options are applied in
+// order; a later option overrides an earlier one. With no options the Decoder
+// uses default limits.
+func NewDecoder(opts ...DecoderOption) (*Decoder, error) {
 	d := &Decoder{}
 	d.ensureInit()
-	return d
+	for _, o := range opts {
+		if err := o(d); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
 }
 
-// SetMaxWindowSize sets the maximum allowed window size for decoding.
+// DecoderOption configures a [Decoder]. Options are passed to [NewDecoder] and
+// [NewReader].
+type DecoderOption func(*Decoder) error
+
+// WithDecoderMaxWindow sets the maximum allowed window size for decoding.
 // The default is 128 MiB.
 //
 // n must be in the range [MinWindowSize, MaxWindowSize].
-func (d *Decoder) SetMaxWindowSize(n int) error {
-	d.ensureInit()
-	if n < MinWindowSize || n > MaxWindowSize {
-		return fmt.Errorf("zstd: max window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
+func WithDecoderMaxWindow(n int) DecoderOption {
+	return func(d *Decoder) error {
+		if n < MinWindowSize || n > MaxWindowSize {
+			return fmt.Errorf("zstd: max window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
+		}
+		d.o.maxWindowSize = n
+		return nil
 	}
-	d.o.maxWindowSize = n
-	return nil
 }
 
-// SetMaxSize limits the total number of decompressed bytes produced.
+// WithDecoderMaxSize limits the total number of decompressed bytes produced.
 // The default, 0, disables the limit; a negative n is an error.
 //
 // For streaming ([Reader.Read] / [Reader.WriteTo]) the limit applies to the
@@ -63,49 +74,53 @@ func (d *Decoder) SetMaxWindowSize(n int) error {
 //
 // The limit is enforced per block, so output may exceed n by up to one block
 // (128 KiB) before an [ErrDecodedSizeExceeded] is returned.
-func (d *Decoder) SetMaxSize(n int64) error {
-	d.ensureInit()
-	if n < 0 {
-		return fmt.Errorf("zstd: max decoded size %d must be >= 0", n)
+func WithDecoderMaxSize(n int64) DecoderOption {
+	return func(d *Decoder) error {
+		if n < 0 {
+			return fmt.Errorf("zstd: max decoded size %d must be >= 0", n)
+		}
+		d.o.maxDecodedSize = n
+		return nil
 	}
-	d.o.maxDecodedSize = n
-	return nil
 }
 
-// AddDict registers a dictionary for decompression.
+// WithDecoderDict registers a dictionary for decompression.
 // Passing nil removes all previously registered dictionaries.
 // A non-nil Dict that was not created by [ParseDict] is ignored.
-func (d *Decoder) AddDict(pd *Dict) {
-	d.ensureInit()
-	if pd == nil || pd.d == nil {
-		if pd == nil {
-			clear(d.dicts)
-			return
+func WithDecoderDict(pd *Dict) DecoderOption {
+	return func(d *Decoder) error {
+		if pd == nil || pd.d == nil {
+			if pd == nil {
+				clear(d.dicts)
+			}
+			return nil
 		}
-		return
+		if d.dicts == nil {
+			d.dicts = make(map[uint32]*dict)
+		}
+		d.dicts[pd.d.id] = pd.d
+		return nil
 	}
-	if d.dicts == nil {
-		d.dicts = make(map[uint32]*dict)
-	}
-	d.dicts[pd.d.id] = pd.d
 }
 
-// SetRawDict registers raw bytes as a dictionary with ID 0.
+// WithDecoderRawDict registers raw bytes as a dictionary with ID 0.
 // The dictionary must be at least 8 bytes; shorter values are ignored.
 // Passing nil removes all previously registered dictionaries.
-func (d *Decoder) SetRawDict(b []byte) {
-	d.ensureInit()
-	if b == nil {
-		clear(d.dicts)
-		return
+func WithDecoderRawDict(b []byte) DecoderOption {
+	return func(d *Decoder) error {
+		if b == nil {
+			clear(d.dicts)
+			return nil
+		}
+		if len(b) < 8 {
+			return nil
+		}
+		if d.dicts == nil {
+			d.dicts = make(map[uint32]*dict)
+		}
+		d.dicts[0] = &dict{id: 0, content: b, offsets: [3]int{1, 4, 8}}
+		return nil
 	}
-	if len(b) < 8 {
-		return
-	}
-	if d.dicts == nil {
-		d.dicts = make(map[uint32]*dict)
-	}
-	d.dicts[0] = &dict{id: 0, content: b, offsets: [3]int{1, 4, 8}}
 }
 
 // AppendDecompress decompresses src and appends the decompressed bytes to dst,
@@ -119,10 +134,9 @@ func (d *Decoder) SetRawDict(b []byte) {
 //
 //	result, err := d.AppendDecompress(existingPrefix, compressed)
 //
-// Any registered dictionaries (via AddDict or SetRawDict) apply.
+// Any configured dictionaries (via WithDecoderDict or WithDecoderRawDict) apply.
 //
-// AppendDecompress is safe for concurrent use on the same Decoder,
-// provided configuration methods are not called concurrently.
+// AppendDecompress is safe for concurrent use on the same Decoder.
 func (d *Decoder) AppendDecompress(dst, src []byte) ([]byte, error) {
 	d.ensureInit()
 

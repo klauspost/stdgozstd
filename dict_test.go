@@ -97,12 +97,10 @@ func TestParseDict(t *testing.T) {
 					t.Fatalf("ID: got %d, want %d", d.ID(), id)
 				}
 
-				e := NewEncoder()
-				e.AddDict(d)
+				e := mustEncoder(t, WithEncoderDict(d))
 				compressed := e.AppendCompress(nil, src)
 
-				dec := NewDecoder()
-				dec.AddDict(d)
+				dec := mustDecoder(t, WithDecoderDict(d))
 				got, err := dec.AppendDecompress(nil, compressed)
 				if err != nil {
 					t.Fatal(err)
@@ -250,7 +248,7 @@ func TestDict_MarshalBinary(t *testing.T) {
 	}
 }
 
-func TestEncoder_SetRawDict(t *testing.T) {
+func TestWithEncoderRawDict(t *testing.T) {
 	t.Run("round_trip_all_levels", func(t *testing.T) {
 		dictContent := bytes.Repeat([]byte("dictionary prefix content here! "), 100)
 		src := append([]byte{}, dictContent[500:1500]...)
@@ -260,12 +258,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		for level := BestSpeed; level <= BestCompression; level++ {
 			t.Run("", func(t *testing.T) {
 				var buf bytes.Buffer
-				e := NewEncoder()
-				if err := e.SetLevel(level); err != nil {
-					t.Fatal(err)
-				}
-				e.SetRawDict(dictContent)
-				w := NewWriter(&buf, e)
+				w := mustWriter(t, &buf, WithEncoderLevel(level), WithEncoderRawDict(dictContent))
 				w.Reset(&buf)
 				if _, err := w.Write(src); err != nil {
 					t.Fatal(err)
@@ -274,9 +267,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				dec := NewDecoder()
-				dec.SetRawDict(dictContent)
-				r := NewReader(bytes.NewReader(buf.Bytes()), dec)
+				r := mustReader(t, bytes.NewReader(buf.Bytes()), WithDecoderRawDict(dictContent))
 				got, err := io.ReadAll(r)
 				if err := r.Close(); err != nil {
 					t.Fatal(err)
@@ -298,16 +289,10 @@ func TestEncoder_SetRawDict(t *testing.T) {
 
 		for level := BestSpeed; level <= BestCompression; level++ {
 			t.Run("", func(t *testing.T) {
-				e := NewEncoder()
-				if err := e.SetLevel(level); err != nil {
-					t.Fatal(err)
-				}
-				e.SetRawDict(dictContent)
+				e := mustEncoder(t, WithEncoderLevel(level), WithEncoderRawDict(dictContent))
 				compressed := e.AppendCompress(nil, src)
 
-				dec := NewDecoder()
-				dec.SetRawDict(dictContent)
-				r := NewReader(bytes.NewReader(compressed), dec)
+				r := mustReader(t, bytes.NewReader(compressed), WithDecoderRawDict(dictContent))
 				got, err := io.ReadAll(r)
 				if err := r.Close(); err != nil {
 					t.Fatal(err)
@@ -328,14 +313,11 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		src := append([]byte{}, dictContent[:2000]...)
 		src = append(src, []byte("tiny unique suffix")...)
 
-		e := NewEncoder()
-
 		// Without dict.
-		noDictCompressed := e.AppendCompress(nil, src)
+		noDictCompressed := mustEncoder(t).AppendCompress(nil, src)
 
 		// With dict.
-		e.SetRawDict(dictContent)
-		withDictCompressed := e.AppendCompress(nil, src)
+		withDictCompressed := mustEncoder(t, WithEncoderRawDict(dictContent)).AppendCompress(nil, src)
 
 		if len(withDictCompressed) > len(noDictCompressed) {
 			t.Fatalf("dict should help: with=%d, without=%d", len(withDictCompressed), len(noDictCompressed))
@@ -347,12 +329,9 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		src := append([]byte{}, dictContent[:2000]...)
 		src = append(src, []byte("unique tail")...)
 
-		e := NewEncoder()
+		noDictCompressed := mustEncoder(t).AppendCompress(nil, src)
 
-		noDictCompressed := e.AppendCompress(nil, src)
-
-		e.SetRawDict(dictContent)
-		withDictCompressed := e.AppendCompress(nil, src)
+		withDictCompressed := mustEncoder(t, WithEncoderRawDict(dictContent)).AppendCompress(nil, src)
 
 		if len(withDictCompressed) >= len(noDictCompressed) {
 			t.Fatalf("dict should shrink output: with=%d, without=%d", len(withDictCompressed), len(noDictCompressed))
@@ -364,13 +343,10 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		for _, sz := range []int{8, 16} {
 			t.Run("", func(t *testing.T) {
 				dictContent := bytes.Repeat([]byte("x"), sz)
-				e := NewEncoder()
-				e.SetRawDict(dictContent)
+				e := mustEncoder(t, WithEncoderRawDict(dictContent))
 				compressed := e.AppendCompress(nil, src)
 
-				dec := NewDecoder()
-				dec.SetRawDict(dictContent)
-				r := NewReader(bytes.NewReader(compressed), dec)
+				r := mustReader(t, bytes.NewReader(compressed), WithDecoderRawDict(dictContent))
 				got, err := io.ReadAll(r)
 				_ = r.Close()
 				if err != nil {
@@ -387,14 +363,12 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		src := bytes.Repeat([]byte("short dict ignored "), 50)
 
 		// Compress without dict.
-		e := NewEncoder()
-		want := e.AppendCompress(nil, src)
+		want := mustEncoder(t).AppendCompress(nil, src)
 
-		// SetRawDict with < 8 bytes should be silently ignored.
+		// WithEncoderRawDict with < 8 bytes should be silently ignored.
 		for _, sz := range []int{1, 4, 7} {
 			t.Run("", func(t *testing.T) {
-				e2 := NewEncoder()
-				e2.SetRawDict(bytes.Repeat([]byte("x"), sz))
+				e2 := mustEncoder(t, WithEncoderRawDict(bytes.Repeat([]byte("x"), sz)))
 				got := e2.AppendCompress(nil, src)
 				if !bytes.Equal(got, want) {
 					t.Fatalf("sz=%d: short dict was not ignored (output differs)", sz)
@@ -403,8 +377,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		}
 
 		// Reader side: short dict should not register.
-		dec := NewDecoder()
-		dec.SetRawDict(bytes.Repeat([]byte("x"), 3))
+		dec := mustDecoder(t, WithDecoderRawDict(bytes.Repeat([]byte("x"), 3)))
 		got, err := dec.AppendDecompress(nil, want)
 		if err != nil {
 			t.Fatal(err)
@@ -419,16 +392,13 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		src := bytes.Repeat([]byte("data "), 100)
 
 		// Compress with dict.
-		e := NewEncoder()
-		e.SetRawDict(dictContent)
-		withDict := e.AppendCompress(nil, src)
+		withDict := mustEncoder(t, WithEncoderRawDict(dictContent)).AppendCompress(nil, src)
 
-		// Short dict should be a no-op — dict stays.
-		e.SetRawDict([]byte("x"))
-		stillWithDict := e.AppendCompress(nil, src)
+		// A short raw dict is a no-op — the real dict remains.
+		stillWithDict := mustEncoder(t, WithEncoderRawDict(dictContent), WithEncoderRawDict([]byte("x"))).AppendCompress(nil, src)
 
 		if !bytes.Equal(withDict, stillWithDict) {
-			t.Fatal("short SetRawDict should not have cleared dict")
+			t.Fatal("short WithEncoderRawDict should not have cleared dict")
 		}
 	})
 
@@ -437,10 +407,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		src := []byte("hello world, compressed without dict")
 
 		var buf bytes.Buffer
-		e := NewEncoder()
-		e.SetRawDict(dictContent)
-		e.SetRawDict(nil) // clear dict
-		w := NewWriter(&buf, e)
+		w := mustWriter(t, &buf, WithEncoderRawDict(dictContent), WithEncoderRawDict(nil)) // second option clears dict
 		w.Reset(&buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
@@ -449,7 +416,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -465,10 +432,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 		src := []byte("hello world, compressed without dict")
 
 		var buf bytes.Buffer
-		e := NewEncoder()
-		e.SetRawDict(dictContent)
-		e.AddDict(nil) // clear dict
-		w := NewWriter(&buf, e)
+		w := mustWriter(t, &buf, WithEncoderRawDict(dictContent), WithEncoderDict(nil)) // second option clears dict
 		w.Reset(&buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
@@ -477,7 +441,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -500,13 +464,10 @@ func TestEncoder_SetRawDict(t *testing.T) {
 			src  []byte
 		}{{"frame1", src1}, {"frame2", src2}} {
 			t.Run(frame.name, func(t *testing.T) {
-				e := NewEncoder()
-				e.SetRawDict(dictContent)
+				e := mustEncoder(t, WithEncoderRawDict(dictContent))
 				compressed := e.AppendCompress(nil, frame.src)
 
-				dec := NewDecoder()
-				dec.SetRawDict(dictContent)
-				r := NewReader(bytes.NewReader(compressed), dec)
+				r := mustReader(t, bytes.NewReader(compressed), WithDecoderRawDict(dictContent))
 				got, err := io.ReadAll(r)
 				_ = r.Close()
 				if err != nil {
@@ -520,7 +481,7 @@ func TestEncoder_SetRawDict(t *testing.T) {
 	})
 }
 
-func TestEncoder_AddDict(t *testing.T) {
+func TestWithEncoderDict(t *testing.T) {
 	t.Run("round_trip", func(t *testing.T) {
 		raw := loadTestDict(t)
 		d, err := ParseDict(raw)
@@ -531,16 +492,10 @@ func TestEncoder_AddDict(t *testing.T) {
 
 		for level := BestSpeed; level <= BestCompression; level++ {
 			t.Run("", func(t *testing.T) {
-				e := NewEncoder()
-				if err := e.SetLevel(level); err != nil {
-					t.Fatal(err)
-				}
-				e.AddDict(d)
+				e := mustEncoder(t, WithEncoderLevel(level), WithEncoderDict(d))
 				compressed := e.AppendCompress(nil, src)
 
-				dec := NewDecoder()
-				dec.AddDict(d)
-				r := NewReader(bytes.NewReader(compressed), dec)
+				r := mustReader(t, bytes.NewReader(compressed), WithDecoderDict(d))
 				got, err := io.ReadAll(r)
 				if err := r.Close(); err != nil {
 					t.Fatal(err)
@@ -564,9 +519,7 @@ func TestEncoder_AddDict(t *testing.T) {
 		src := bytes.Repeat([]byte("streaming parsed dict test "), 300)
 
 		var buf bytes.Buffer
-		e := NewEncoder()
-		e.AddDict(d)
-		w := NewWriter(&buf, e)
+		w := mustWriter(t, &buf, WithEncoderDict(d))
 		w.Reset(&buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
@@ -575,9 +528,7 @@ func TestEncoder_AddDict(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		dec := NewDecoder()
-		dec.AddDict(d)
-		r := NewReader(bytes.NewReader(buf.Bytes()), dec)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()), WithDecoderDict(d))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -597,13 +548,10 @@ func TestEncoder_AddDict(t *testing.T) {
 		// > 128KB to force multiple blocks.
 		src := bytes.Repeat([]byte("multiblock dict content xyz "), 6000)
 
-		e := NewEncoder()
-		e.AddDict(d)
+		e := mustEncoder(t, WithEncoderDict(d))
 		compressed := e.AppendCompress(nil, src)
 
-		dec := NewDecoder()
-		dec.AddDict(d)
-		r := NewReader(bytes.NewReader(compressed), dec)
+		r := mustReader(t, bytes.NewReader(compressed), WithDecoderDict(d))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -622,12 +570,10 @@ func TestEncoder_AddDict(t *testing.T) {
 		}
 		src := bytes.Repeat([]byte("decode-all parsed dict test "), 100)
 
-		e := NewEncoder()
-		e.AddDict(d)
+		e := mustEncoder(t, WithEncoderDict(d))
 		compressed := e.AppendCompress(nil, src)
 
-		dec := NewDecoder()
-		dec.AddDict(d)
+		dec := mustDecoder(t, WithDecoderDict(d))
 		got, err := dec.AppendDecompress(nil, compressed)
 		if err != nil {
 			t.Fatal(err)
@@ -638,7 +584,7 @@ func TestEncoder_AddDict(t *testing.T) {
 	})
 }
 
-func TestDecoder_SetRawDict(t *testing.T) {
+func TestWithDecoderRawDict(t *testing.T) {
 	t.Run("nil_clear", func(t *testing.T) {
 		raw := loadTestDict(t)
 		d, err := ParseDict(raw)
@@ -647,13 +593,10 @@ func TestDecoder_SetRawDict(t *testing.T) {
 		}
 		src := bytes.Repeat([]byte("reader raw dict nil clear "), 50)
 
-		e := NewEncoder()
-		e.AddDict(d)
+		e := mustEncoder(t, WithEncoderDict(d))
 		compressed := e.AppendCompress(nil, src)
 
-		dec := NewDecoder()
-		dec.AddDict(d)
-		r := NewReader(bytes.NewReader(compressed), dec)
+		r := mustReader(t, bytes.NewReader(compressed), WithDecoderDict(d))
 		got, err := io.ReadAll(r)
 		if err != nil {
 			t.Fatal(err)
@@ -662,10 +605,8 @@ func TestDecoder_SetRawDict(t *testing.T) {
 			t.Fatal("mismatch before clear")
 		}
 
-		dec.SetRawDict(nil) // clear all dicts
-		if err := r.Reset(bytes.NewReader(compressed)); err != nil {
-			t.Fatal(err)
-		}
+		// A fresh reader with no dict registered must fail.
+		r = mustReader(t, bytes.NewReader(compressed))
 		_, err = io.ReadAll(r)
 		_ = r.Close()
 		if err != ErrUnknownDictionary {
@@ -677,15 +618,11 @@ func TestDecoder_SetRawDict(t *testing.T) {
 		dictContent := bytes.Repeat([]byte("real dict content "), 50)
 		src := bytes.Repeat([]byte("data "), 100)
 
-		e := NewEncoder()
-		e.SetRawDict(dictContent)
+		e := mustEncoder(t, WithEncoderRawDict(dictContent))
 		compressed := e.AppendCompress(nil, src)
 
-		dec := NewDecoder()
-		dec.SetRawDict(dictContent)
-
-		// Short dict should be a no-op — real dict stays.
-		dec.SetRawDict([]byte("short"))
+		// The short raw dict is a no-op, so the real dict remains.
+		dec := mustDecoder(t, WithDecoderRawDict(dictContent), WithDecoderRawDict([]byte("short")))
 
 		got, err := dec.AppendDecompress(nil, compressed)
 		if err != nil {
@@ -700,12 +637,10 @@ func TestDecoder_SetRawDict(t *testing.T) {
 		dict := []byte("12345678")
 		src := bytes.Repeat([]byte("exactly8 "), 100)
 
-		e := NewEncoder()
-		e.SetRawDict(dict)
+		e := mustEncoder(t, WithEncoderRawDict(dict))
 		compressed := e.AppendCompress(nil, src)
 
-		dec := NewDecoder()
-		dec.SetRawDict(dict)
+		dec := mustDecoder(t, WithDecoderRawDict(dict))
 		got, err := dec.AppendDecompress(nil, compressed)
 		if err != nil {
 			t.Fatal(err)
@@ -724,16 +659,13 @@ func TestDecoder_SetRawDict(t *testing.T) {
 
 		// Compress each frame with its own writer to avoid writer reuse issues.
 		compress := func(src []byte) []byte {
-			e := NewEncoder()
-			e.SetRawDict(dictContent)
+			e := mustEncoder(t, WithEncoderRawDict(dictContent))
 			return e.AppendCompress(nil, src)
 		}
 		comp1 := compress(src1)
 		comp2 := compress(src2)
 
-		dec := NewDecoder()
-		dec.SetRawDict(dictContent)
-		r := NewReader(bytes.NewReader(comp1), dec)
+		r := mustReader(t, bytes.NewReader(comp1), WithDecoderRawDict(dictContent))
 		got1, err := io.ReadAll(r)
 		if err != nil {
 			t.Fatal(err)
@@ -762,18 +694,12 @@ func TestDecoder_SetRawDict(t *testing.T) {
 		dict2 := bytes.Repeat([]byte("dict two content "), 50)
 		src := bytes.Repeat([]byte("payload "), 100)
 
-		e1 := NewEncoder()
-		e1.SetRawDict(dict1)
-		frame1 := e1.AppendCompress(nil, src)
+		frame1 := mustEncoder(t, WithEncoderRawDict(dict1)).AppendCompress(nil, src)
 
-		e2 := NewEncoder()
-		e2.SetRawDict(dict2)
-		frame2 := e2.AppendCompress(nil, src)
+		frame2 := mustEncoder(t, WithEncoderRawDict(dict2)).AppendCompress(nil, src)
 
 		// Reader switches dicts between frames.
-		dec := NewDecoder()
-		dec.SetRawDict(dict1)
-		r := NewReader(bytes.NewReader(frame1), dec)
+		r := mustReader(t, bytes.NewReader(frame1), WithDecoderRawDict(dict1))
 		got1, err := io.ReadAll(r)
 		if err != nil {
 			t.Fatal(err)
@@ -782,10 +708,7 @@ func TestDecoder_SetRawDict(t *testing.T) {
 			t.Fatal("frame 1 mismatch")
 		}
 
-		dec.SetRawDict(dict2)
-		if err := r.Reset(bytes.NewReader(frame2)); err != nil {
-			t.Fatal(err)
-		}
+		r = mustReader(t, bytes.NewReader(frame2), WithDecoderRawDict(dict2))
 		got2, err := io.ReadAll(r)
 		r.Close()
 		if err != nil {
@@ -797,7 +720,7 @@ func TestDecoder_SetRawDict(t *testing.T) {
 	})
 }
 
-func TestDecoder_AddDict(t *testing.T) {
+func TestWithDecoderDict(t *testing.T) {
 	t.Run("nil_clear", func(t *testing.T) {
 		raw := loadTestDict(t)
 		d, err := ParseDict(raw)
@@ -806,13 +729,10 @@ func TestDecoder_AddDict(t *testing.T) {
 		}
 		src := bytes.Repeat([]byte("reader add dict nil clear "), 50)
 
-		e := NewEncoder()
-		e.AddDict(d)
+		e := mustEncoder(t, WithEncoderDict(d))
 		compressed := e.AppendCompress(nil, src)
 
-		dec := NewDecoder()
-		dec.AddDict(d)
-		r := NewReader(bytes.NewReader(compressed), dec)
+		r := mustReader(t, bytes.NewReader(compressed), WithDecoderDict(d))
 		got, err := io.ReadAll(r)
 		if err != nil {
 			t.Fatal(err)
@@ -821,10 +741,8 @@ func TestDecoder_AddDict(t *testing.T) {
 			t.Fatal("mismatch before clear")
 		}
 
-		dec.AddDict(nil)
-		if err := r.Reset(bytes.NewReader(compressed)); err != nil {
-			t.Fatal(err)
-		}
+		// A fresh reader with no dict registered must fail.
+		r = mustReader(t, bytes.NewReader(compressed))
 		_, err = io.ReadAll(r)
 		_ = r.Close()
 		if err != ErrUnknownDictionary {
@@ -853,20 +771,14 @@ func TestDecoder_AddDict(t *testing.T) {
 		srcA := bytes.Repeat([]byte("frame A data "), 100)
 		srcB := bytes.Repeat([]byte("frame B data "), 100)
 
-		eA := NewEncoder()
-		eA.AddDict(dA)
-		compA := eA.AppendCompress(nil, srcA)
+		compA := mustEncoder(t, WithEncoderDict(dA)).AppendCompress(nil, srcA)
 
-		eB := NewEncoder()
-		eB.AddDict(dB)
-		compB := eB.AppendCompress(nil, srcB)
+		compB := mustEncoder(t, WithEncoderDict(dB)).AppendCompress(nil, srcB)
 
 		// Concatenate two frames.
 		combined := append(compA, compB...)
 
-		dec := NewDecoder()
-		dec.AddDict(dA)
-		dec.AddDict(dB)
+		dec := mustDecoder(t, WithDecoderDict(dA), WithDecoderDict(dB))
 		got, err := dec.AppendDecompress(nil, combined)
 		if err != nil {
 			t.Fatal(err)
@@ -887,18 +799,12 @@ func TestDecoder_AddDict(t *testing.T) {
 		src := bytes.Repeat([]byte("multi dict clear test "), 50)
 
 		// Compress with parsed dict.
-		eParsed := NewEncoder()
-		eParsed.AddDict(d)
-		compParsed := eParsed.AppendCompress(nil, src)
+		compParsed := mustEncoder(t, WithEncoderDict(d)).AppendCompress(nil, src)
 
 		// Compress with raw dict.
-		eRaw := NewEncoder()
-		eRaw.SetRawDict(dictContent)
-		compRaw := eRaw.AppendCompress(nil, src)
+		compRaw := mustEncoder(t, WithEncoderRawDict(dictContent)).AppendCompress(nil, src)
 
-		dec := NewDecoder()
-		dec.AddDict(d)
-		dec.SetRawDict(dictContent)
+		dec := mustDecoder(t, WithDecoderDict(d), WithDecoderRawDict(dictContent))
 
 		// Both should decode.
 		got, err := dec.AppendDecompress(nil, compParsed)
@@ -916,13 +822,14 @@ func TestDecoder_AddDict(t *testing.T) {
 			t.Fatal("raw dict mismatch")
 		}
 
-		dec.AddDict(nil) // clear all
+		// A fresh decoder with no dicts registered must fail.
+		noDict := mustDecoder(t)
 
-		_, err = dec.AppendDecompress(nil, compParsed)
+		_, err = noDict.AppendDecompress(nil, compParsed)
 		if err != ErrUnknownDictionary {
 			t.Fatalf("parsed dict after clear: expected ErrUnknownDictionary, got: %v", err)
 		}
-		_, err = dec.AppendDecompress(nil, compRaw)
+		_, err = noDict.AppendDecompress(nil, compRaw)
 		// Raw dict (ID 0) doesn't embed a dict ID in the frame, so the error
 		// is a corruption from bad offsets rather than ErrUnknownDictionary.
 		if !errors.Is(err, &ErrCorrupted{}) {
@@ -936,12 +843,9 @@ func TestNoDictDecodeWithDict(t *testing.T) {
 	src := bytes.Repeat([]byte("no dict needed "), 200)
 	dictContent := []byte("some dict content that is not used")
 
-	e := NewEncoder()
-	compressed := e.AppendCompress(nil, src)
+	compressed := mustEncoder(t).AppendCompress(nil, src)
 
-	dec := NewDecoder()
-	dec.SetRawDict(dictContent)
-	r := NewReader(bytes.NewReader(compressed), dec)
+	r := mustReader(t, bytes.NewReader(compressed), WithDecoderRawDict(dictContent))
 	got, err := io.ReadAll(r)
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
@@ -962,12 +866,11 @@ func TestDictIDMismatch(t *testing.T) {
 	}
 	src := bytes.Repeat([]byte("dict id mismatch test "), 50)
 
-	e := NewEncoder()
-	e.AddDict(d)
+	e := mustEncoder(t, WithEncoderDict(d))
 	compressed := e.AppendCompress(nil, src)
 
 	// Decode without dict registered → ErrUnknownDictionary.
-	r := NewReader(bytes.NewReader(compressed), nil)
+	r := mustReader(t, bytes.NewReader(compressed))
 	_, err = io.ReadAll(r)
 	_ = r.Close()
 	if err != ErrUnknownDictionary {
@@ -975,7 +878,7 @@ func TestDictIDMismatch(t *testing.T) {
 	}
 
 	// Also test DecodeBytes path.
-	dec := NewDecoder()
+	dec := mustDecoder(t)
 	_, err = dec.AppendDecompress(nil, compressed)
 	if err != ErrUnknownDictionary {
 		t.Fatalf("DecodeBytes: expected ErrUnknownDictionary, got: %v", err)

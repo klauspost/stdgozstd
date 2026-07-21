@@ -16,18 +16,18 @@ func FuzzRoundTrip(f *testing.F) {
 	f.Add([]byte{0})
 	f.Add(bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add(make([]byte, 65536))
-	e := NewEncoder()
-	d := NewDecoder()
-	r := NewReader(nil, d)
+	d := mustDecoder(f)
+	r := mustReader(f, nil)
 	var compressed []byte
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		if len(data) > 0 {
-			_ = e.SetLevel(int(data[0] % BestCompression))
-		}
 		// We disable CRC for the truncation tests to be more effective.
 		// Otherwise CRC will always be missing.
-		e.SetCRC(false)
+		level := 3
+		if len(data) > 0 {
+			level = int(data[0] % BestCompression)
+		}
+		e := mustEncoder(t, WithEncoderLevel(level), WithEncoderCRC(false))
 		compressed = e.AppendCompress(compressed[:0], data)
 
 		_ = r.Reset(bytes.NewReader(compressed))
@@ -81,18 +81,15 @@ func FuzzRoundTrip(f *testing.F) {
 
 func FuzzNewReader(f *testing.F) {
 	// Seed with valid compressed data.
-	e := NewEncoder()
+	e := mustEncoder(f)
 	f.Add(e.AppendCompress(nil, []byte("test")))
 	f.Add(e.AppendCompress(nil, []byte("testtesttesttesttesttesttesttest")))
 	f.Add(e.AppendCompress(nil, bytes.Repeat([]byte{0}, 100000)))
 	f.Add(e.AppendCompress(nil, []byte{}))
 	f.Add([]byte{0x28, 0xb5, 0x2f, 0xfd}) // just magic
-	d := NewDecoder()
 	// Cap window to prevent OOM on crafted frames.
-	if err := d.SetMaxWindowSize(1 << 20); err != nil {
-		f.Fatal(err)
-	}
-	r := NewReader(nil, d)
+	d := mustDecoder(f, WithDecoderMaxWindow(1<<20))
+	r := mustReader(f, nil, WithDecoderMaxWindow(1<<20))
 	defer r.Close()
 	var dst []byte
 
@@ -121,10 +118,8 @@ func FuzzStreamRoundTrip(f *testing.F) {
 	f.Add([]byte{0, 0}, []byte{})
 	f.Add([]byte{9, 5}, bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add([]byte{0x85, 0xff}, make([]byte, 65536))
-	e := NewEncoder()
-	w := NewWriter(nil, e)
-	d := NewDecoder()
-	r := NewReader(nil, d)
+	d := mustDecoder(f)
+	r := mustReader(f, nil)
 
 	f.Fuzz(func(t *testing.T, cfg, data []byte) {
 		if len(cfg) != 2 {
@@ -141,10 +136,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 		}
 
 		var buf bytes.Buffer
-		_ = e.SetLevel(level)
-		e.SetCRC(crc)
-		e.SetLowMemory(lowMem)
-		w.Reset(&buf)
+		w := mustWriter(t, &buf, WithEncoderLevel(level), WithEncoderCRC(crc), WithLowMemory(lowMem))
 		_, _ = w.Write(data[:split])
 		_ = w.Flush()
 		_, _ = w.Write(data[split:])
@@ -198,9 +190,6 @@ func FuzzDictRoundTrip(f *testing.F) {
 	f.Add([]byte{3, 10}, bytes.Repeat([]byte("the quick brown fox "), 50))
 	f.Add([]byte{0, 0}, []byte("small"))
 	f.Add([]byte{0, 0}, []byte("smallsmallsmallsmallsmall"))
-	e := NewEncoder()
-	d := NewDecoder()
-
 	f.Fuzz(func(t *testing.T, cfg, data []byte) {
 		if len(cfg) < 2 || len(data) < 2 {
 			return
@@ -214,12 +203,10 @@ func FuzzDictRoundTrip(f *testing.F) {
 		dictPart := data[:dictSplit]
 		dataPart := data[dictSplit:]
 
-		_ = e.SetLevel(level)
-		e.SetCRC(crc)
-		e.SetRawDict(dictPart)
+		e := mustEncoder(t, WithEncoderLevel(level), WithEncoderCRC(crc), WithEncoderRawDict(dictPart))
 		compressed := e.AppendCompress(nil, dataPart)
 
-		d.SetRawDict(dictPart)
+		d := mustDecoder(t, WithDecoderRawDict(dictPart))
 		got, err := d.AppendDecompress(nil, compressed)
 		if err != nil {
 			t.Fatalf("decode: %v", err)
@@ -267,20 +254,17 @@ func FuzzReaderReset(f *testing.F) {
 	f.Add(byte(3), []byte("hello reset world"))
 	f.Add(byte(0), []byte{})
 	f.Add(byte(9), bytes.Repeat([]byte("reset"), 500))
-	e := NewEncoder()
-	d := NewDecoder()
-	r := NewReader(nil, d)
+	d := mustDecoder(f)
+	r := mustReader(f, nil)
 	var buf bytes.Buffer
 
 	f.Fuzz(func(t *testing.T, levelByte byte, data []byte) {
 		level := int(levelByte) % (BestCompression + 1)
 
-		_ = e.SetLevel(level)
-		compressed1 := e.AppendCompress(nil, data)
+		compressed1 := mustEncoder(t, WithEncoderLevel(level)).AppendCompress(nil, data)
 
 		level2 := (level + 1) % (BestCompression + 1)
-		_ = e.SetLevel(level2)
-		compressed2 := e.AppendCompress(nil, data)
+		compressed2 := mustEncoder(t, WithEncoderLevel(level2)).AppendCompress(nil, data)
 
 		_ = r.Reset(bytes.NewReader(compressed1))
 		got, err := io.ReadAll(r)

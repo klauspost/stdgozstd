@@ -72,10 +72,10 @@ func TestMatchLen(t *testing.T) {
 func TestEncoder_AppendCompress(t *testing.T) {
 	t.Run("basic", func(t *testing.T) {
 		src := bytes.Repeat([]byte("encode all test data! "), 500)
-		e := NewEncoder()
+		e := mustEncoder(t)
 		compressed := e.AppendCompress(nil, src)
 
-		r := NewReader(bytes.NewReader(compressed), nil)
+		r := mustReader(t, bytes.NewReader(compressed))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -87,7 +87,7 @@ func TestEncoder_AppendCompress(t *testing.T) {
 	})
 
 	t.Run("empty", func(t *testing.T) {
-		e := NewEncoder()
+		e := mustEncoder(t)
 		c1 := e.AppendCompress(nil, nil)
 		c2 := e.AppendCompress(nil, []byte{})
 		if len(c1) == 0 {
@@ -96,7 +96,7 @@ func TestEncoder_AppendCompress(t *testing.T) {
 		if !bytes.Equal(c1, c2) {
 			t.Fatal("nil and empty should produce identical frames")
 		}
-		r := NewReader(bytes.NewReader(c1), nil)
+		r := mustReader(t, bytes.NewReader(c1))
 		defer r.Close()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -108,8 +108,7 @@ func TestEncoder_AppendCompress(t *testing.T) {
 	})
 
 	t.Run("empty_crc", func(t *testing.T) {
-		e := NewEncoder()
-		e.SetCRC(true)
+		e := mustEncoder(t, WithEncoderCRC(true))
 		frame := e.AppendCompress(nil, nil)
 
 		var d Decoder
@@ -122,16 +121,14 @@ func TestEncoder_AppendCompress(t *testing.T) {
 		}
 
 		// Verify CRC is present: frame with CRC should be longer than without.
-		e.SetCRC(false)
-		noCRC := e.AppendCompress(nil, nil)
+		noCRC := mustEncoder(t, WithEncoderCRC(false)).AppendCompress(nil, nil)
 		if len(frame) <= len(noCRC) {
 			t.Fatalf("empty CRC frame (%d) should be longer than no-CRC (%d)", len(frame), len(noCRC))
 		}
 	})
 
 	t.Run("empty_no_crc", func(t *testing.T) {
-		e := NewEncoder()
-		e.SetCRC(false)
+		e := mustEncoder(t, WithEncoderCRC(false))
 		frame := e.AppendCompress(nil, nil)
 
 		var d Decoder
@@ -149,10 +146,10 @@ func TestEncoder_AppendCompress(t *testing.T) {
 		for i := range src {
 			src[i] = byte(i % 200)
 		}
-		e := NewEncoder()
+		e := mustEncoder(t)
 		compressed := e.AppendCompress(nil, src)
 
-		r := NewReader(bytes.NewReader(compressed), nil)
+		r := mustReader(t, bytes.NewReader(compressed))
 		defer func() { _ = r.Close() }()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -165,7 +162,7 @@ func TestEncoder_AppendCompress(t *testing.T) {
 
 	t.Run("pre_existing_dst", func(t *testing.T) {
 		src := []byte("data to compress")
-		e := NewEncoder()
+		e := mustEncoder(t)
 		prefix := []byte("HEADER:")
 		got := e.AppendCompress(prefix, src)
 		if !bytes.HasPrefix(got, []byte("HEADER:")) {
@@ -183,7 +180,7 @@ func TestEncoder_AppendCompress(t *testing.T) {
 	})
 
 	t.Run("reuse", func(t *testing.T) {
-		e := NewEncoder()
+		e := mustEncoder(t)
 		src1 := []byte("first payload")
 		src2 := []byte("second payload, different content")
 
@@ -208,12 +205,9 @@ func TestEncoder_AppendCompress(t *testing.T) {
 		src := bytes.Repeat([]byte("AppendCompress test data across levels! "), 500)
 		for level := 1; level <= BestCompression; level++ {
 			t.Run("", func(t *testing.T) {
-				e := NewEncoder()
-				if err := e.SetLevel(level); err != nil {
-					t.Fatal(err)
-				}
+				e := mustEncoder(t, WithEncoderLevel(level))
 				compressed := e.AppendCompress(nil, src)
-				r := NewReader(bytes.NewReader(compressed), nil)
+				r := mustReader(t, bytes.NewReader(compressed))
 				defer func() { _ = r.Close() }()
 				got, err := io.ReadAll(r)
 				if err != nil {
@@ -230,7 +224,7 @@ func TestEncoder_AppendCompress(t *testing.T) {
 func TestEncoder_AppendCompress_Concurrent(t *testing.T) {
 	t.Run("same_encoder", func(t *testing.T) {
 		src := bytes.Repeat([]byte("concurrent compress test data! "), 500)
-		e := NewEncoder()
+		e := mustEncoder(t)
 
 		const goroutines = 8
 		var wg sync.WaitGroup
@@ -241,7 +235,7 @@ func TestEncoder_AppendCompress_Concurrent(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				compressed := e.AppendCompress(nil, src)
-				r := NewReader(bytes.NewReader(compressed), nil)
+				r := mustReader(t, bytes.NewReader(compressed))
 				defer r.Close()
 				got, err := io.ReadAll(r)
 				if err != nil {
@@ -272,8 +266,7 @@ func TestEncoder_AppendCompress_Concurrent(t *testing.T) {
 			level := i % (BestCompression + 1)
 			go func() {
 				defer wg.Done()
-				le := NewEncoder()
-				_ = le.SetLevel(level)
+				le := mustEncoder(t, WithEncoderLevel(level))
 				compressed := le.AppendCompress(nil, src)
 				var d Decoder
 				got, err := d.AppendDecompress(nil, compressed)
@@ -306,7 +299,7 @@ func TestEncoder_AppendCompress_Concurrent(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				compressed := e.AppendCompress(nil, src)
-				got, err := NewDecoder().AppendDecompress(nil, compressed)
+				got, err := mustDecoder(t).AppendDecompress(nil, compressed)
 				if err != nil {
 					errs <- err
 					return
@@ -324,43 +317,31 @@ func TestEncoder_AppendCompress_Concurrent(t *testing.T) {
 	})
 }
 
-func TestEncoder_SetLevel(t *testing.T) {
+func TestWithEncoderLevel(t *testing.T) {
 	t.Run("validation", func(t *testing.T) {
-		e := NewEncoder()
-		if err := e.SetLevel(DefaultCompression); err != nil {
-			t.Fatal(err)
-		}
-		if err := e.SetLevel(NoCompression); err != nil {
-			t.Fatal(err)
-		}
-		if err := e.SetLevel(BestSpeed); err != nil {
-			t.Fatal(err)
-		}
-		if err := e.SetLevel(BestCompression); err != nil {
-			t.Fatal(err)
-		}
-		if err := e.SetLevel(10); err == nil {
+		mustEncoder(t, WithEncoderLevel(DefaultCompression))
+		mustEncoder(t, WithEncoderLevel(NoCompression))
+		mustEncoder(t, WithEncoderLevel(BestSpeed))
+		mustEncoder(t, WithEncoderLevel(BestCompression))
+		if _, err := NewEncoder(WithEncoderLevel(10)); err == nil {
 			t.Fatal("expected error for invalid level")
 		}
-		if err := e.SetLevel(-2); err == nil {
+		if _, err := NewEncoder(WithEncoderLevel(-2)); err == nil {
 			t.Fatal("expected error for invalid level")
 		}
 	})
 
 	t.Run("switching", func(t *testing.T) {
 		src := bytes.Repeat([]byte("level switching test "), 200)
-		e := NewEncoder()
-		w := NewWriter(nil, e)
 		for level := 1; level <= BestCompression; level++ {
 			var buf bytes.Buffer
-			_ = e.SetLevel(level)
-			w.Reset(&buf)
+			w := mustWriter(t, &buf, WithEncoderLevel(level))
 			_, _ = w.Write(src)
 			if err := w.Close(); err != nil {
 				t.Fatal(err)
 			}
 
-			r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+			r := mustReader(t, bytes.NewReader(buf.Bytes()))
 			got, err := io.ReadAll(r)
 			_ = r.Close()
 			if err != nil {
@@ -375,12 +356,7 @@ func TestEncoder_SetLevel(t *testing.T) {
 	t.Run("no_compression_raw", func(t *testing.T) {
 		src := bytes.Repeat([]byte("hello world! this is highly compressible data. "), 1000)
 		var buf bytes.Buffer
-		e := NewEncoder()
-		if err := e.SetLevel(NoCompression); err != nil {
-			t.Fatal(err)
-		}
-		w := NewWriter(&buf, e)
-		w.Reset(&buf)
+		w := mustWriter(t, &buf, WithEncoderLevel(NoCompression))
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
 		}
@@ -390,7 +366,7 @@ func TestEncoder_SetLevel(t *testing.T) {
 		if buf.Len() < len(src) {
 			t.Errorf("NoCompression reduced size: src=%d compressed=%d", len(src), buf.Len())
 		}
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		defer r.Close()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -402,15 +378,12 @@ func TestEncoder_SetLevel(t *testing.T) {
 
 		// Also test AppendCompress path.
 		buf.Reset()
-		e2 := NewEncoder()
-		if err := e2.SetLevel(NoCompression); err != nil {
-			t.Fatal(err)
-		}
+		e2 := mustEncoder(t, WithEncoderLevel(NoCompression))
 		compressed := e2.AppendCompress(nil, src)
 		if len(compressed) < len(src) {
 			t.Errorf("AppendCompress NoCompression reduced size: src=%d compressed=%d", len(src), len(compressed))
 		}
-		r2 := NewReader(bytes.NewReader(compressed), nil)
+		r2 := mustReader(t, bytes.NewReader(compressed))
 		defer r2.Close()
 		got2, err := io.ReadAll(r2)
 		if err != nil {
@@ -422,25 +395,20 @@ func TestEncoder_SetLevel(t *testing.T) {
 	})
 }
 
-func TestEncoder_SetWindowSize(t *testing.T) {
+func TestWithWindowSize(t *testing.T) {
 	t.Run("validation", func(t *testing.T) {
-		e := NewEncoder()
-		if err := e.SetWindowSize(MinWindowSize); err != nil {
-			t.Fatal(err)
-		}
-		if err := e.SetWindowSize(MaxWindowSize); err != nil {
-			t.Fatal(err)
-		}
-		if err := e.SetWindowSize(MinWindowSize - 1); err == nil {
+		mustEncoder(t, WithWindowSize(MinWindowSize))
+		mustEncoder(t, WithWindowSize(MaxWindowSize))
+		if _, err := NewEncoder(WithWindowSize(MinWindowSize - 1)); err == nil {
 			t.Fatal("expected error for below min")
 		}
-		if err := e.SetWindowSize(MaxWindowSize + 1); err == nil {
+		if _, err := NewEncoder(WithWindowSize(MaxWindowSize + 1)); err == nil {
 			t.Fatal("expected error for above max")
 		}
-		if err := e.SetWindowSize(0); err == nil {
+		if _, err := NewEncoder(WithWindowSize(0)); err == nil {
 			t.Fatal("expected error for 0")
 		}
-		if err := e.SetWindowSize(-1); err == nil {
+		if _, err := NewEncoder(WithWindowSize(-1)); err == nil {
 			t.Fatal("expected error for negative")
 		}
 	})
@@ -449,8 +417,7 @@ func TestEncoder_SetWindowSize(t *testing.T) {
 		for _, wnd := range []int{1 << 16, 1 << 20, 8 << 20} {
 			// Keep data well under window size.
 			src := bytes.Repeat([]byte("wnd "), wnd/8)
-			e := NewEncoder()
-			_ = e.SetWindowSize(wnd)
+			e := mustEncoder(t, WithWindowSize(wnd))
 			frame := e.AppendCompress(nil, src)
 			var d Decoder
 			got, err := d.AppendDecompress(nil, frame)
@@ -464,15 +431,13 @@ func TestEncoder_SetWindowSize(t *testing.T) {
 	})
 }
 
-func TestEncoder_SetCRC(t *testing.T) {
+func TestWithEncoderCRC(t *testing.T) {
 	src := bytes.Repeat([]byte("crc test "), 200)
 
-	withCRC := NewEncoder()
-	withCRC.SetCRC(true)
+	withCRC := mustEncoder(t, WithEncoderCRC(true))
 	crcFrame := withCRC.AppendCompress(nil, src)
 
-	noCRC := NewEncoder()
-	noCRC.SetCRC(false)
+	noCRC := mustEncoder(t, WithEncoderCRC(false))
 	noCRCFrame := noCRC.AppendCompress(nil, src)
 
 	// CRC adds 4 bytes (checksum) + 1 bit in FHD.
@@ -499,7 +464,7 @@ func TestEncoder_ZeroValue(t *testing.T) {
 		var e Encoder
 		compressed := e.AppendCompress(nil, src)
 
-		r := NewReader(bytes.NewReader(compressed), nil)
+		r := mustReader(t, bytes.NewReader(compressed))
 		defer r.Close()
 		got, err := io.ReadAll(r)
 		if err != nil {
@@ -513,7 +478,6 @@ func TestEncoder_ZeroValue(t *testing.T) {
 	t.Run("config", func(t *testing.T) {
 		src := bytes.Repeat([]byte("zero config "), 100)
 		var e Encoder
-		e.SetCRC(false)
 		compressed := e.AppendCompress(nil, src)
 
 		var d Decoder
@@ -527,27 +491,23 @@ func TestEncoder_ZeroValue(t *testing.T) {
 	})
 }
 
-// These tests exercise the split configuration model: one Encoder/Decoder holds
-// configuration and can be reused across, or reconfigured between, streams.
+// These tests exercise the configuration model: each Writer takes its own
+// immutable options, and independent Writers keep separate streaming state.
 
 func TestEncoderReuseAcrossWriters(t *testing.T) {
-	e := NewEncoder()
-	if err := e.SetLevel(5); err != nil {
-		t.Fatal(err)
-	}
 	for _, src := range [][]byte{
 		bytes.Repeat([]byte("alpha "), 300),
 		bytes.Repeat([]byte("beta "), 300),
 	} {
 		var buf bytes.Buffer
-		w := NewWriter(&buf, e)
+		w := mustWriter(t, &buf, WithEncoderLevel(5))
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
 		}
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
 		}
-		got, err := NewDecoder().AppendDecompress(nil, buf.Bytes())
+		got, err := mustDecoder(t).AppendDecompress(nil, buf.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -557,13 +517,12 @@ func TestEncoderReuseAcrossWriters(t *testing.T) {
 	}
 }
 
-// TestEncoderSharedInterleavedWriters proves two Writers bound to one Encoder
-// keep independent streaming state.
+// TestEncoderSharedInterleavedWriters proves two independent Writers keep
+// independent streaming state.
 func TestEncoderSharedInterleavedWriters(t *testing.T) {
-	e := NewEncoder()
 	var b1, b2 bytes.Buffer
-	w1 := NewWriter(&b1, e)
-	w2 := NewWriter(&b2, e)
+	w1 := mustWriter(t, &b1)
+	w2 := mustWriter(t, &b2)
 	src1 := bytes.Repeat([]byte("first stream "), 500)
 	src2 := bytes.Repeat([]byte("second stream "), 500)
 
@@ -586,24 +545,21 @@ func TestEncoderSharedInterleavedWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, err := NewDecoder().AppendDecompress(nil, b1.Bytes()); err != nil || !bytes.Equal(got, src1) {
+	if got, err := mustDecoder(t).AppendDecompress(nil, b1.Bytes()); err != nil || !bytes.Equal(got, src1) {
 		t.Fatalf("w1: err=%v match=%v", err, bytes.Equal(got, src1))
 	}
-	if got, err := NewDecoder().AppendDecompress(nil, b2.Bytes()); err != nil || !bytes.Equal(got, src2) {
+	if got, err := mustDecoder(t).AppendDecompress(nil, b2.Bytes()); err != nil || !bytes.Equal(got, src2) {
 		t.Fatalf("w2: err=%v match=%v", err, bytes.Equal(got, src2))
 	}
 }
 
-// TestEncoderReconfigureBetweenStreams changes settings on a bound Encoder
-// between streams and verifies the change takes effect on the next Reset.
+// TestEncoderReconfigureBetweenStreams verifies the CRC option is honored per
+// Writer: options are fixed at construction, so each variant uses a fresh Writer.
 func TestEncoderReconfigureBetweenStreams(t *testing.T) {
 	src := bytes.Repeat([]byte("reconfigure "), 200)
-	e := NewEncoder()
-	w := NewWriter(nil, e)
 
-	e.SetCRC(true)
 	var withCRC bytes.Buffer
-	w.Reset(&withCRC)
+	w := mustWriter(t, &withCRC, WithEncoderCRC(true))
 	if _, err := w.Write(src); err != nil {
 		t.Fatal(err)
 	}
@@ -611,10 +567,8 @@ func TestEncoderReconfigureBetweenStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Reconfigure the SAME encoder, then reuse the SAME writer.
-	e.SetCRC(false)
 	var noCRC bytes.Buffer
-	w.Reset(&noCRC)
+	w = mustWriter(t, &noCRC, WithEncoderCRC(false))
 	if _, err := w.Write(src); err != nil {
 		t.Fatal(err)
 	}
@@ -627,7 +581,7 @@ func TestEncoderReconfigureBetweenStreams(t *testing.T) {
 		t.Fatalf("CRC toggle not applied: withCRC=%d noCRC=%d", withCRC.Len(), noCRC.Len())
 	}
 	for _, b := range []*bytes.Buffer{&withCRC, &noCRC} {
-		got, err := NewDecoder().AppendDecompress(nil, b.Bytes())
+		got, err := mustDecoder(t).AppendDecompress(nil, b.Bytes())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -637,24 +591,16 @@ func TestEncoderReconfigureBetweenStreams(t *testing.T) {
 	}
 }
 
-// TestEncoderReconfigureMidStreamDoesNotCorrupt verifies that reconfiguring the
-// bound Encoder mid-stream leaves the in-flight stream valid; the configuration
-// captured at Reset governs the current frame and the change applies at the next
-// Reset. (Toggling CRC mid-stream is unsupported; changing the level is safe.)
+// TestEncoderReconfigureMidStreamDoesNotCorrupt verifies that splitting a large
+// multi-block stream across multiple Write calls leaves the frame valid. (Options
+// are now immutable per Writer, so mid-stream reconfiguration is not possible.)
 func TestEncoderReconfigureMidStreamDoesNotCorrupt(t *testing.T) {
 	// Larger than one block so blocks are encoded during Write, not just at Close.
 	src := bytes.Repeat([]byte("mid stream reconfiguration test "), 10000)
-	e := NewEncoder()
-	if err := e.SetLevel(1); err != nil {
-		t.Fatal(err)
-	}
 	var buf bytes.Buffer
-	w := NewWriter(&buf, e)
+	w := mustWriter(t, &buf, WithEncoderLevel(1))
 
 	if _, err := w.Write(src[:len(src)/2]); err != nil {
-		t.Fatal(err)
-	}
-	if err := e.SetLevel(9); err != nil { // mid-stream change
 		t.Fatal(err)
 	}
 	if _, err := w.Write(src[len(src)/2:]); err != nil {
@@ -664,9 +610,9 @@ func TestEncoderReconfigureMidStreamDoesNotCorrupt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := NewDecoder().AppendDecompress(nil, buf.Bytes())
+	got, err := mustDecoder(t).AppendDecompress(nil, buf.Bytes())
 	if err != nil {
-		t.Fatalf("mid-stream reconfig corrupted the frame: %v", err)
+		t.Fatalf("split-write stream corrupted the frame: %v", err)
 	}
 	if !bytes.Equal(got, src) {
 		t.Fatal("mismatch")

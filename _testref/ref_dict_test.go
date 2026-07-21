@@ -55,13 +55,16 @@ func TestRefDictMarshalRoundTrip(t *testing.T) {
 
 	// Encode with original, decode with unmarshalled.
 	src := testData(4096)
-	e := zstd.NewEncoder()
-	e.AddDict(liteDict)
+	e, err := zstd.NewEncoder(zstd.WithEncoderDict(liteDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	compressed := e.AppendCompress(nil, src)
 
-	dec := zstd.NewDecoder()
-	dec.AddDict(&d2)
-	r := zstd.NewReader(bytes.NewReader(compressed), dec)
+	r, err := zstd.NewReader(bytes.NewReader(compressed), zstd.WithDecoderDict(&d2))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
 	got, err := readAll(r)
 	if err != nil {
@@ -77,9 +80,10 @@ func TestRefDictParsedLiteEncodeParentDecode(t *testing.T) {
 	src := testData(8192)
 
 	for _, level := range []int{1, 3, 5, 8} {
-		e := zstd.NewEncoder()
-		e.SetLevel(level)
-		e.AddDict(liteDict)
+		e, err := zstd.NewEncoder(zstd.WithEncoderLevel(level), zstd.WithEncoderDict(liteDict))
+		if err != nil {
+			t.Fatal(err)
+		}
 		compressed := e.AppendCompress(nil, src)
 
 		got := refDecode(t, compressed, ref.WithDecoderDicts(raw))
@@ -96,9 +100,10 @@ func TestRefDictParsedParentEncodeLiteDecode(t *testing.T) {
 	for _, rl := range []ref.EncoderLevel{ref.SpeedFastest, ref.SpeedDefault, ref.SpeedBetterCompression, ref.SpeedBestCompression} {
 		compressed := refEncode(t, src, ref.WithEncoderLevel(rl), ref.WithEncoderDict(raw))
 
-		dec := zstd.NewDecoder()
-		dec.AddDict(liteDict)
-		r := zstd.NewReader(bytes.NewReader(compressed), dec)
+		r, err := zstd.NewReader(bytes.NewReader(compressed), zstd.WithDecoderDict(liteDict))
+		if err != nil {
+			t.Fatal(err)
+		}
 		got, err := readAll(r)
 		r.Close()
 		if err != nil {
@@ -115,9 +120,10 @@ func TestRefDictRawLiteEncodeParentDecode(t *testing.T) {
 	src := testData(8192)
 
 	for _, level := range []int{1, 3, 5, 8, 9} {
-		e := zstd.NewEncoder()
-		e.SetLevel(level)
-		e.SetRawDict(rawDict)
+		e, err := zstd.NewEncoder(zstd.WithEncoderLevel(level), zstd.WithEncoderRawDict(rawDict))
+		if err != nil {
+			t.Fatal(err)
+		}
 		compressed := e.AppendCompress(nil, src)
 
 		got := refDecode(t, compressed, ref.WithDecoderDictRaw(0, rawDict))
@@ -134,9 +140,10 @@ func TestRefDictRawParentEncodeLiteDecode(t *testing.T) {
 	for _, rl := range []ref.EncoderLevel{ref.SpeedFastest, ref.SpeedDefault, ref.SpeedBetterCompression, ref.SpeedBestCompression} {
 		compressed := refEncode(t, src, ref.WithEncoderLevel(rl), ref.WithEncoderDictRaw(0, rawDict))
 
-		dec := zstd.NewDecoder()
-		dec.SetRawDict(rawDict)
-		r := zstd.NewReader(bytes.NewReader(compressed), dec)
+		r, err := zstd.NewReader(bytes.NewReader(compressed), zstd.WithDecoderRawDict(rawDict))
+		if err != nil {
+			t.Fatal(err)
+		}
 		got, err := readAll(r)
 		r.Close()
 		if err != nil {
@@ -153,8 +160,10 @@ func TestRefDictParsedAppendToBothDirs(t *testing.T) {
 	src := testData(4096)
 
 	// lite → parent
-	e := zstd.NewEncoder()
-	e.AddDict(liteDict)
+	e, err := zstd.NewEncoder(zstd.WithEncoderDict(liteDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	compressed := e.AppendCompress(nil, src)
 	got := refDecode(t, compressed, ref.WithDecoderDicts(raw))
 	if !bytes.Equal(src, got) {
@@ -163,11 +172,12 @@ func TestRefDictParsedAppendToBothDirs(t *testing.T) {
 
 	// parent → lite
 	compressed = refEncode(t, src, ref.WithEncoderDict(raw))
-	dec := zstd.NewDecoder()
-	dec.AddDict(liteDict)
-	r := zstd.NewReader(bytes.NewReader(compressed), dec)
+	r, err := zstd.NewReader(bytes.NewReader(compressed), zstd.WithDecoderDict(liteDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
-	got, err := readAll(r)
+	got, err = readAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,8 +191,10 @@ func TestRefDictRawAppendToBothDirs(t *testing.T) {
 	src := testData(4096)
 
 	// lite → parent
-	e := zstd.NewEncoder()
-	e.SetRawDict(rawDict)
+	e, err := zstd.NewEncoder(zstd.WithEncoderRawDict(rawDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	compressed := e.AppendCompress(nil, src)
 	got := refDecode(t, compressed, ref.WithDecoderDictRaw(0, rawDict))
 	if !bytes.Equal(src, got) {
@@ -191,11 +203,12 @@ func TestRefDictRawAppendToBothDirs(t *testing.T) {
 
 	// parent → lite
 	compressed = refEncode(t, src, ref.WithEncoderDictRaw(0, rawDict))
-	dec := zstd.NewDecoder()
-	dec.SetRawDict(rawDict)
-	r := zstd.NewReader(bytes.NewReader(compressed), dec)
+	r, err := zstd.NewReader(bytes.NewReader(compressed), zstd.WithDecoderRawDict(rawDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
-	got, err := readAll(r)
+	got, err = readAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,9 +223,10 @@ func TestRefDictStreamBothDirs(t *testing.T) {
 
 	// lite stream → parent decode
 	var buf bytes.Buffer
-	e := zstd.NewEncoder()
-	e.AddDict(liteDict)
-	w := zstd.NewWriter(&buf, e)
+	w, err := zstd.NewWriter(&buf, zstd.WithEncoderDict(liteDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.Write(src)
 	w.Close()
 	got := refDecode(t, buf.Bytes(), ref.WithDecoderDicts(raw))
@@ -222,11 +236,12 @@ func TestRefDictStreamBothDirs(t *testing.T) {
 
 	// parent stream → lite decode
 	compressed := refStreamEncode(t, src, ref.WithEncoderDict(raw))
-	dec := zstd.NewDecoder()
-	dec.AddDict(liteDict)
-	r := zstd.NewReader(bytes.NewReader(compressed), dec)
+	r, err := zstd.NewReader(bytes.NewReader(compressed), zstd.WithDecoderDict(liteDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer r.Close()
-	got, err := readAll(r)
+	got, err = readAll(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,14 +254,19 @@ func TestRefDictClearAndReuse(t *testing.T) {
 	_, liteDict := loadDicts(t)
 	src := testData(4096)
 
-	e := zstd.NewEncoder()
-	e.AddDict(liteDict)
+	e, err := zstd.NewEncoder(zstd.WithEncoderDict(liteDict))
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Encode with dict.
 	_ = e.AppendCompress(nil, src)
 
-	// Clear dict.
-	e.AddDict(nil)
-	compressed := e.AppendCompress(nil, src)
+	// Clear dict: use a fresh encoder without a dict.
+	e2, err := zstd.NewEncoder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := e2.AppendCompress(nil, src)
 
 	// Should decode without dict.
 	got := refDecode(t, compressed)

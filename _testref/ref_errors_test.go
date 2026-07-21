@@ -32,8 +32,11 @@ func TestRefCorruptDataBothReject(t *testing.T) {
 	bad[len(bad)/2] ^= 0xff
 
 	// Lite should error.
-	r := zstd.NewReader(bytes.NewReader(bad), nil)
-	_, err := io.ReadAll(r)
+	r, err := zstd.NewReader(bytes.NewReader(bad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(r)
 	r.Close()
 	liteErr := err != nil
 
@@ -57,8 +60,11 @@ func TestRefTruncatedStreamBothReject(t *testing.T) {
 	// Truncate to 75% of the compressed data.
 	trunc := compressed[:len(compressed)*3/4]
 
-	r := zstd.NewReader(bytes.NewReader(trunc), nil)
-	_, err := io.ReadAll(r)
+	r, err := zstd.NewReader(bytes.NewReader(trunc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(r)
 	r.Close()
 	liteErr := err != nil
 
@@ -76,8 +82,10 @@ func TestRefTruncatedStreamBothReject(t *testing.T) {
 
 func TestRefBadChecksumBothReject(t *testing.T) {
 	src := testData(4096)
-	e := zstd.NewEncoder()
-	e.SetCRC(true)
+	e, err := zstd.NewEncoder(zstd.WithEncoderCRC(true))
+	if err != nil {
+		t.Fatal(err)
+	}
 	compressed := e.AppendCompress(nil, src)
 
 	// Flip the last byte (CRC is at the end).
@@ -85,8 +93,11 @@ func TestRefBadChecksumBothReject(t *testing.T) {
 	copy(bad, compressed)
 	bad[len(bad)-1] ^= 0xff
 
-	r := zstd.NewReader(bytes.NewReader(bad), nil)
-	_, err := io.ReadAll(r)
+	r, err := zstd.NewReader(bytes.NewReader(bad))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = io.ReadAll(r)
 	r.Close()
 	liteErr := err != nil
 
@@ -105,7 +116,10 @@ func TestRefBadChecksumBothReject(t *testing.T) {
 func TestRefWriteAfterClose(t *testing.T) {
 	// Lite encoder.
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf, nil)
+	w, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.Write([]byte("hello"))
 	w.Close()
 	_, liteErr := w.Write([]byte("more"))

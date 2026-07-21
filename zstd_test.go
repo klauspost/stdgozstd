@@ -18,7 +18,7 @@ func TestRoundTripStreaming(t *testing.T) {
 	src := bytes.Repeat([]byte("streaming round-trip test data! "), 500)
 
 	var buf bytes.Buffer
-	w := NewWriter(&buf, nil)
+	w := mustWriter(t, &buf)
 	// Write one byte at a time.
 	for _, b := range src {
 		if _, err := w.Write([]byte{b}); err != nil {
@@ -29,7 +29,7 @@ func TestRoundTripStreaming(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+	r := mustReader(t, bytes.NewReader(buf.Bytes()))
 	// Read one byte at a time.
 	var got []byte
 	tmp := make([]byte, 1)
@@ -60,7 +60,7 @@ func TestRoundTripLarge(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	w := NewWriter(&buf, nil)
+	w := mustWriter(t, &buf)
 	if _, err := w.Write(src); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestRoundTripLarge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+	r := mustReader(t, bytes.NewReader(buf.Bytes()))
 	got, err := io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {
@@ -80,12 +80,12 @@ func TestRoundTripLarge(t *testing.T) {
 }
 
 func TestConcatenatedFrames(t *testing.T) {
-	e := NewEncoder()
+	e := mustEncoder(t)
 	frame1 := e.AppendCompress(nil, []byte("frame one "))
 	frame2 := e.AppendCompress(nil, []byte("frame two"))
 
 	combined := append(frame1, frame2...)
-	r := NewReader(bytes.NewReader(combined), nil)
+	r := mustReader(t, bytes.NewReader(combined))
 	got, err := io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {
@@ -100,7 +100,7 @@ func TestIOCopy(t *testing.T) {
 	src := bytes.Repeat([]byte("io.Copy integration test "), 1000)
 
 	var compressed bytes.Buffer
-	w := NewWriter(&compressed, nil)
+	w := mustWriter(t, &compressed)
 	n, err := io.Copy(w, bytes.NewReader(src))
 	if err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestIOCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := NewReader(bytes.NewReader(compressed.Bytes()), nil)
+	r := mustReader(t, bytes.NewReader(compressed.Bytes()))
 	var decompressed bytes.Buffer
 	_, err = io.Copy(&decompressed, r)
 	_ = r.Close()
@@ -125,7 +125,7 @@ func TestIOCopy(t *testing.T) {
 }
 
 func TestResetCycles(t *testing.T) {
-	w := NewWriter(nil, nil)
+	w := mustWriter(t, nil)
 	for i := range 50 {
 		var buf bytes.Buffer
 		w.Reset(&buf)
@@ -138,7 +138,7 @@ func TestResetCycles(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		r := NewReader(bytes.NewReader(buf.Bytes()), nil)
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -178,13 +178,10 @@ func TestAllLevelsRoundTrip(t *testing.T) {
 	for _, input := range inputs {
 		t.Run(input.name, func(t *testing.T) {
 			for level := NoCompression; level <= BestCompression; level++ {
-				e := NewEncoder()
-				if err := e.SetLevel(level); err != nil {
-					t.Fatal(err)
-				}
+				e := mustEncoder(t, WithEncoderLevel(level))
 				compressed := e.AppendCompress(nil, input.data)
 
-				r := NewReader(bytes.NewReader(compressed), nil)
+				r := mustReader(t, bytes.NewReader(compressed))
 				got, err := io.ReadAll(r)
 				_ = r.Close()
 				if err != nil {
@@ -265,7 +262,7 @@ func TestErrWindowSizeExceeded_Is(t *testing.T) {
 
 func TestConcurrentReadersFromSameFrame(t *testing.T) {
 	src := bytes.Repeat([]byte("shared frame data "), 500)
-	e := NewEncoder()
+	e := mustEncoder(t)
 	compressed := e.AppendCompress(nil, src)
 
 	const goroutines = 8
@@ -276,7 +273,7 @@ func TestConcurrentReadersFromSameFrame(t *testing.T) {
 	for range goroutines {
 		go func() {
 			defer wg.Done()
-			r := NewReader(bytes.NewReader(compressed), nil)
+			r := mustReader(t, bytes.NewReader(compressed))
 			got, err := io.ReadAll(r)
 			r.Close()
 			if err != nil {
@@ -303,8 +300,8 @@ func TestAppendConcurrentBidirectional(t *testing.T) {
 		make([]byte, 50000),
 	}
 
-	e := NewEncoder()
-	dec := NewDecoder()
+	e := mustEncoder(t)
+	dec := mustDecoder(t)
 
 	// Pre-compress all inputs.
 	compressed := make([][]byte, len(inputs))

@@ -16,7 +16,7 @@ import (
 )
 
 // Compression level constants. These map to the levels accepted by
-// [Encoder.SetLevel].
+// [WithEncoderLevel].
 const (
 	DefaultCompression = -1 // level 3
 	NoCompression      = 0  // store blocks without compression
@@ -60,9 +60,8 @@ func encoderCategory(level int) int {
 }
 
 // Encoder holds compression configuration and provides one-shot compression
-// via [Encoder.AppendCompress]. A single Encoder may be passed to any number
-// of [NewWriter] calls; it must not be reconfigured while a bound Writer is
-// mid-stream.
+// via [Encoder.AppendCompress]. Configuration is fixed at construction via
+// [EncoderOption] values and is immutable afterwards.
 type Encoder struct {
 	level     int
 	blockSize int
@@ -85,103 +84,125 @@ func (e *Encoder) ensureInit() {
 	})
 }
 
-// NewEncoder returns a new Encoder configured for the default compression level.
-func NewEncoder() *Encoder {
+// NewEncoder returns a new Encoder configured by opts. Options are applied in
+// order; a later option overrides an earlier one. With no options the Encoder
+// uses the default compression level.
+func NewEncoder(opts ...EncoderOption) (*Encoder, error) {
 	e := &Encoder{}
 	e.ensureInit()
-	return e
+	for _, o := range opts {
+		if err := o(e); err != nil {
+			return nil, err
+		}
+	}
+	return e, nil
 }
 
-// SetLevel sets the compression level. Valid values range from
+// EncoderOption configures an [Encoder]. Options are passed to [NewEncoder] and
+// [NewWriter].
+type EncoderOption func(*Encoder) error
+
+// WithEncoderLevel sets the compression level. Valid values range from
 // [NoCompression] (0) to [BestCompression] (9); [DefaultCompression] (-1)
 // selects level 3.
-func (e *Encoder) SetLevel(level int) error {
-	e.ensureInit()
-	if level == DefaultCompression {
-		level = 3
+func WithEncoderLevel(level int) EncoderOption {
+	return func(e *Encoder) error {
+		if level == DefaultCompression {
+			level = 3
+		}
+		if level < NoCompression || level > BestCompression {
+			return fmt.Errorf("zstd: invalid level %d", level)
+		}
+		e.level = level
+		e.blockSize = maxCompressedBlockSize
+		// These mirror zstd default window sizes at levels 1, 3 and 9.
+		switch level {
+		case 0:
+			e.wndSize = 0
+		case 1:
+			e.wndSize = 2 << 20
+		case 2:
+			e.wndSize = 3 << 20
+		case 3:
+			e.wndSize = 4 << 20
+		case 4:
+			e.wndSize = 4 << 20
+		case 5:
+			e.wndSize = 4 << 20
+		case 6:
+			e.wndSize = 5 << 20
+		case 7:
+			e.wndSize = 6 << 20
+		case 8:
+			e.wndSize = 7 << 20
+		case 9:
+			e.wndSize = 8 << 20
+		}
+		return nil
 	}
-	if level < NoCompression || level > BestCompression {
-		return fmt.Errorf("zstd: invalid level %d", level)
-	}
-	e.level = level
-	e.blockSize = maxCompressedBlockSize
-	// These mirror zstd default window sizes at levels 1, 3 and 9.
-	switch level {
-	case 0:
-		e.wndSize = 0
-	case 1:
-		e.wndSize = 2 << 20
-	case 2:
-		e.wndSize = 3 << 20
-	case 3:
-		e.wndSize = 4 << 20
-	case 4:
-		e.wndSize = 4 << 20
-	case 5:
-		e.wndSize = 4 << 20
-	case 6:
-		e.wndSize = 5 << 20
-	case 7:
-		e.wndSize = 6 << 20
-	case 8:
-		e.wndSize = 7 << 20
-	case 9:
-		e.wndSize = 8 << 20
-	}
-	return nil
 }
 
-// SetWindowSize overrides the window size for compression.
+// WithWindowSize overrides the window size for compression.
 // This allows limiting memory usage both for compression and decompression.
+// Apply it after [WithEncoderLevel] to override the level's default window.
 //
 // n must be in the range [MinWindowSize, MaxWindowSize].
-func (e *Encoder) SetWindowSize(n int) error {
-	e.ensureInit()
-	if n < MinWindowSize || n > MaxWindowSize {
-		return fmt.Errorf("zstd: window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
+func WithWindowSize(n int) EncoderOption {
+	return func(e *Encoder) error {
+		if n < MinWindowSize || n > MaxWindowSize {
+			return fmt.Errorf("zstd: window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
+		}
+		e.wndSize = n
+		return nil
 	}
-	e.wndSize = n
-	return nil
 }
 
-// SetLowMemory controls whether the encoder should trade speed for
+// WithLowMemory controls whether the encoder should trade speed for
 // lower memory usage.
-func (e *Encoder) SetLowMemory(b bool) {
-	e.ensureInit()
-	e.lowMem = b
-}
-
-// SetCRC controls whether a xxHash-64 checksum is appended to each frame.
-// The default is true.
-func (e *Encoder) SetCRC(b bool) {
-	e.ensureInit()
-	e.crc = b
-}
-
-// AddDict registers a parsed dictionary for compression.
-// Passing nil removes the previous dictionary.
-func (e *Encoder) AddDict(d *Dict) {
-	e.ensureInit()
-	if d == nil {
-		e.dict = nil
-		return
+func WithLowMemory(b bool) EncoderOption {
+	return func(e *Encoder) error {
+		e.lowMem = b
+		return nil
 	}
-	e.dict = d.d
 }
 
-// SetRawDict registers raw bytes as a dictionary prefix.
+// WithEncoderCRC controls whether a xxHash-64 checksum is appended to each
+// frame. The default is true.
+func WithEncoderCRC(b bool) EncoderOption {
+	return func(e *Encoder) error {
+		e.crc = b
+		return nil
+	}
+}
+
+// WithEncoderDict registers a parsed dictionary for compression.
+// Passing nil removes any previously configured dictionary.
+func WithEncoderDict(d *Dict) EncoderOption {
+	return func(e *Encoder) error {
+		if d == nil {
+			e.dict = nil
+			return nil
+		}
+		e.dict = d.d
+		return nil
+	}
+}
+
+// WithEncoderRawDict registers raw bytes as a dictionary prefix.
 // The dictionary must be at least 8 bytes; shorter non-nil values are ignored.
-// Passing nil removes any previous dictionary.
-func (e *Encoder) SetRawDict(b []byte) {
-	e.ensureInit()
-	if b == nil {
-		e.dict = nil
-		return
+// Passing nil removes any previously configured dictionary.
+func WithEncoderRawDict(b []byte) EncoderOption {
+	return func(e *Encoder) error {
+		if b == nil {
+			e.dict = nil
+			return nil
+		}
+		if len(b) < 8 {
+			return nil
+		}
+		e.dict = &dict{content: b}
+		return nil
 	}
-	if len(b) < 8 {
-		return
-	}
-	e.dict = &dict{content: b}
 }
 
 // newEncoder creates the appropriate encoder for the current level,
@@ -228,7 +249,7 @@ func (e *Encoder) newEncoder() encoder {
 // dst, returning the extended buffer. It is a one-shot alternative to the
 // streaming [Writer] interface.
 //
-// The Encoder's current level, dictionary, CRC, and window-size settings apply.
+// The Encoder's configured level, dictionary, CRC, and window-size settings apply.
 // The returned frame is self-contained: it includes a frame header, one or more
 // blocks, and an optional checksum.
 //
@@ -241,8 +262,7 @@ func (e *Encoder) newEncoder() encoder {
 //
 // If src is nil or empty, a minimal valid frame is appended to dst.
 //
-// AppendCompress is safe for concurrent use on the same Encoder,
-// provided configuration methods are not called concurrently.
+// AppendCompress is safe for concurrent use on the same Encoder.
 func (e *Encoder) AppendCompress(dst, src []byte) []byte {
 	e.ensureInit()
 	enc := e.newEncoder()

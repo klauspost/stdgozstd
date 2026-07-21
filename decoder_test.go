@@ -41,7 +41,7 @@ func TestDecoder_AppendDecompress(t *testing.T) {
 
 	t.Run("pre_existing_dst", func(t *testing.T) {
 		src := []byte("appended after prefix")
-		e := NewEncoder()
+		e := mustEncoder(t)
 		compressed := e.AppendCompress(nil, src)
 
 		var d Decoder
@@ -61,7 +61,7 @@ func TestDecoder_AppendDecompress(t *testing.T) {
 		src := make([]byte, 1<<20+50000)
 		rng.Read(src)
 
-		e := NewEncoder()
+		e := mustEncoder(t)
 		compressed := e.AppendCompress(nil, src)
 
 		var d Decoder
@@ -75,8 +75,7 @@ func TestDecoder_AppendDecompress(t *testing.T) {
 	})
 
 	t.Run("multi_frame_crc", func(t *testing.T) {
-		e := NewEncoder()
-		e.SetCRC(true)
+		e := mustEncoder(t, WithEncoderCRC(true))
 		frame1 := e.AppendCompress(nil, []byte("frame one "))
 		frame2 := e.AppendCompress(nil, []byte("frame two"))
 		combined := append(frame1, frame2...)
@@ -95,10 +94,10 @@ func TestDecoder_AppendDecompress(t *testing.T) {
 func TestDecoder_AppendDecompress_Concurrent(t *testing.T) {
 	t.Run("same_decoder", func(t *testing.T) {
 		src := bytes.Repeat([]byte("concurrent decompress test data! "), 500)
-		e := NewEncoder()
+		e := mustEncoder(t)
 		compressed := e.AppendCompress(nil, src)
 
-		d := NewDecoder()
+		d := mustDecoder(t)
 
 		const goroutines = 8
 		var wg sync.WaitGroup
@@ -126,8 +125,8 @@ func TestDecoder_AppendDecompress_Concurrent(t *testing.T) {
 	})
 
 	t.Run("different_data", func(t *testing.T) {
-		e := NewEncoder()
-		d := NewDecoder()
+		e := mustEncoder(t)
+		d := mustDecoder(t)
 
 		const goroutines = 8
 		var wg sync.WaitGroup
@@ -158,7 +157,7 @@ func TestDecoder_AppendDecompress_Concurrent(t *testing.T) {
 
 	t.Run("zero_value", func(t *testing.T) {
 		src := bytes.Repeat([]byte("zero value concurrent decode "), 200)
-		compressed := NewEncoder().AppendCompress(nil, src)
+		compressed := mustEncoder(t).AppendCompress(nil, src)
 		var d Decoder
 
 		const goroutines = 8
@@ -187,18 +186,13 @@ func TestDecoder_AppendDecompress_Concurrent(t *testing.T) {
 	})
 }
 
-func TestDecoder_SetMaxSize(t *testing.T) {
+func TestWithDecoderMaxSize(t *testing.T) {
 	t.Run("validation", func(t *testing.T) {
-		d := NewDecoder()
-		if err := d.SetMaxSize(-1); err == nil {
+		if _, err := NewDecoder(WithDecoderMaxSize(-1)); err == nil {
 			t.Fatal("expected error for -1")
 		}
-		if err := d.SetMaxSize(0); err != nil {
-			t.Fatalf("0 must disable the limit: %v", err)
-		}
-		if err := d.SetMaxSize(100); err != nil {
-			t.Fatalf("positive limit must be valid: %v", err)
-		}
+		mustDecoder(t, WithDecoderMaxSize(0))
+		mustDecoder(t, WithDecoderMaxSize(100))
 	})
 
 	// append_decompress covers the declared-size early rejection (frames from
@@ -206,12 +200,9 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 	// prefix exclusion, and disabling.
 	t.Run("append_decompress", func(t *testing.T) {
 		src := bytes.Repeat([]byte("bomb "), 1000)
-		compressed := NewEncoder().AppendCompress(nil, src)
+		compressed := mustEncoder(t).AppendCompress(nil, src)
 
-		d := NewDecoder()
-		if err := d.SetMaxSize(int64(len(src)) - 1); err != nil {
-			t.Fatal(err)
-		}
+		d := mustDecoder(t, WithDecoderMaxSize(int64(len(src))-1))
 		_, err := d.AppendDecompress(nil, compressed)
 		var de *ErrDecodedSizeExceeded
 		if !errors.As(err, &de) {
@@ -226,9 +217,7 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 		}
 
 		// Exactly the limit succeeds.
-		if err := d.SetMaxSize(int64(len(src))); err != nil {
-			t.Fatal(err)
-		}
+		d = mustDecoder(t, WithDecoderMaxSize(int64(len(src))))
 		got, err := d.AppendDecompress(nil, compressed)
 		if err != nil {
 			t.Fatal(err)
@@ -249,9 +238,7 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 		}
 
 		// Disabling restores unlimited decoding.
-		if err := d.SetMaxSize(0); err != nil {
-			t.Fatal(err)
-		}
+		d = mustDecoder(t, WithDecoderMaxSize(0))
 		if _, err := d.AppendDecompress(nil, compressed); err != nil {
 			t.Fatalf("limit disabled: %v", err)
 		}
@@ -263,7 +250,7 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 	t.Run("no_content_size", func(t *testing.T) {
 		src := bytes.Repeat([]byte("no fcs bomb "), 40000) // multi-block, no FrameContentSize
 		var buf bytes.Buffer
-		w := NewWriter(&buf, nil)
+		w := mustWriter(t, &buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
 		}
@@ -272,10 +259,7 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 		}
 		compressed := buf.Bytes()
 
-		d := NewDecoder()
-		if err := d.SetMaxSize(int64(len(src)) / 2); err != nil {
-			t.Fatal(err)
-		}
+		d := mustDecoder(t, WithDecoderMaxSize(int64(len(src))/2))
 		_, err := d.AppendDecompress(nil, compressed)
 		var de *ErrDecodedSizeExceeded
 		if !errors.As(err, &de) {
@@ -283,9 +267,7 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 		}
 
 		// Without a limit the same frame decodes fully.
-		if err := d.SetMaxSize(0); err != nil {
-			t.Fatal(err)
-		}
+		d = mustDecoder(t, WithDecoderMaxSize(0))
 		got, err := d.AppendDecompress(nil, compressed)
 		if err != nil {
 			t.Fatal(err)
@@ -299,16 +281,13 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 	// within a single AppendDecompress call.
 	t.Run("multi_frame", func(t *testing.T) {
 		part := bytes.Repeat([]byte("frame "), 500)
-		e := NewEncoder()
+		e := mustEncoder(t)
 		var concatenated []byte
 		concatenated = e.AppendCompress(concatenated, part)
 		concatenated = e.AppendCompress(concatenated, part)
 
-		d := NewDecoder()
 		// Enough for one frame but not both.
-		if err := d.SetMaxSize(int64(len(part)) + 100); err != nil {
-			t.Fatal(err)
-		}
+		d := mustDecoder(t, WithDecoderMaxSize(int64(len(part))+100))
 		_, err := d.AppendDecompress(nil, concatenated)
 		var de *ErrDecodedSizeExceeded
 		if !errors.As(err, &de) {
@@ -316,9 +295,7 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 		}
 
 		// Enough for both frames succeeds.
-		if err := d.SetMaxSize(int64(2 * len(part))); err != nil {
-			t.Fatal(err)
-		}
+		d = mustDecoder(t, WithDecoderMaxSize(int64(2*len(part))))
 		got, err := d.AppendDecompress(nil, concatenated)
 		if err != nil {
 			t.Fatal(err)
@@ -330,31 +307,23 @@ func TestDecoder_SetMaxSize(t *testing.T) {
 	})
 }
 
-func TestDecoder_SetMaxWindowSize(t *testing.T) {
+func TestWithDecoderMaxWindow(t *testing.T) {
 	t.Run("validation", func(t *testing.T) {
-		d := NewDecoder()
-		if err := d.SetMaxWindowSize(0); err == nil {
+		if _, err := NewDecoder(WithDecoderMaxWindow(0)); err == nil {
 			t.Fatal("expected error for 0")
 		}
-		if err := d.SetMaxWindowSize(-1); err == nil {
+		if _, err := NewDecoder(WithDecoderMaxWindow(-1)); err == nil {
 			t.Fatal("expected error for -1")
 		}
-		if err := d.SetMaxWindowSize(MaxWindowSize + 1); err == nil {
+		if _, err := NewDecoder(WithDecoderMaxWindow(MaxWindowSize + 1)); err == nil {
 			t.Fatal("expected error for too large")
 		}
-		if err := d.SetMaxWindowSize(MinWindowSize); err != nil {
-			t.Fatalf("MinWindowSize should be valid: %v", err)
-		}
-		if err := d.SetMaxWindowSize(MaxWindowSize); err != nil {
-			t.Fatalf("MaxWindowSize should be valid: %v", err)
-		}
+		mustDecoder(t, WithDecoderMaxWindow(MinWindowSize))
+		mustDecoder(t, WithDecoderMaxWindow(MaxWindowSize))
 	})
 
 	t.Run("one_shot", func(t *testing.T) {
-		d := NewDecoder()
-		if err := d.SetMaxWindowSize(MaxWindowSize); err != nil {
-			t.Fatal(err)
-		}
+		d := mustDecoder(t, WithDecoderMaxWindow(MaxWindowSize))
 		frame := buildRawFrame([]byte("config"))
 		got, err := d.AppendDecompress(nil, frame)
 		if err != nil {
@@ -367,15 +336,14 @@ func TestDecoder_SetMaxWindowSize(t *testing.T) {
 }
 
 func TestDecoderReuseAcrossReaders(t *testing.T) {
-	e := NewEncoder()
+	e := mustEncoder(t)
 	uno := bytes.Repeat([]byte("uno "), 300)
 	dos := bytes.Repeat([]byte("dos "), 300)
 	f1 := e.AppendCompress(nil, uno)
 	f2 := e.AppendCompress(nil, dos)
 
-	d := NewDecoder()
 	for _, tc := range []struct{ frame, want []byte }{{f1, uno}, {f2, dos}} {
-		r := NewReader(bytes.NewReader(tc.frame), d)
+		r := mustReader(t, bytes.NewReader(tc.frame))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
@@ -387,15 +355,14 @@ func TestDecoderReuseAcrossReaders(t *testing.T) {
 	}
 }
 
-// TestDecoderReconfigureBetweenStreams tightens then loosens the max window on a
-// bound Decoder between Reset cycles and verifies the new limit is honored.
+// TestDecoderReconfigureBetweenStreams verifies the max-window limit is honored
+// per reader: a tiny window rejects a wide frame while a large window accepts it.
+// The window is now fixed at construction, so each phase uses a fresh reader.
 func TestDecoderReconfigureBetweenStreams(t *testing.T) {
 	src := bytes.Repeat([]byte("decoder reconfigure "), 300)
-	compressed := NewEncoder().AppendCompress(nil, src)
+	compressed := mustEncoder(t).AppendCompress(nil, src)
 
-	d := NewDecoder()
-	r := NewReader(bytes.NewReader(compressed), d)
-
+	r := mustReader(t, bytes.NewReader(compressed))
 	got, err := io.ReadAll(r)
 	if err != nil {
 		t.Fatal(err)
@@ -404,26 +371,16 @@ func TestDecoderReconfigureBetweenStreams(t *testing.T) {
 		t.Fatal("mismatch")
 	}
 
-	// Tighten the SAME decoder, reuse the SAME reader: must now fail.
-	if err := d.SetMaxWindowSize(MinWindowSize); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Reset(bytes.NewReader(compressed)); err != nil {
-		t.Fatal(err)
-	}
+	// A fresh reader with a tiny window must now fail.
+	r = mustReader(t, bytes.NewReader(compressed), WithDecoderMaxWindow(MinWindowSize))
 	_, err = io.ReadAll(r)
 	var we *ErrWindowSizeExceeded
 	if !errors.As(err, &we) {
 		t.Fatalf("expected ErrWindowSizeExceeded after tightening, got %v", err)
 	}
 
-	// Loosen again: succeeds.
-	if err := d.SetMaxWindowSize(MaxWindowSize); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Reset(bytes.NewReader(compressed)); err != nil {
-		t.Fatal(err)
-	}
+	// A fresh reader with a large window succeeds.
+	r = mustReader(t, bytes.NewReader(compressed), WithDecoderMaxWindow(MaxWindowSize))
 	got, err = io.ReadAll(r)
 	_ = r.Close()
 	if err != nil {

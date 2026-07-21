@@ -22,7 +22,6 @@ func FuzzRefEncoderCompat(f *testing.F) {
 	f.Add(testData(4096), 8)
 	f.Add(make([]byte, 100), 0)
 
-	enc := zstd.NewEncoder()
 	dec, err := ref.NewReader(nil)
 	if err != nil {
 		f.Fatal(err)
@@ -38,7 +37,10 @@ func FuzzRefEncoderCompat(f *testing.F) {
 		if len(data) > 1<<20 {
 			return
 		}
-		_ = enc.SetLevel(level)
+		enc, err := zstd.NewEncoder(zstd.WithEncoderLevel(level))
+		if err != nil {
+			t.Fatal(err)
+		}
 		compressed = enc.AppendCompress(compressed[:0], data)
 		got, err = dec.DecodeAll(compressed, got[:0])
 		if err != nil {
@@ -65,7 +67,10 @@ func FuzzRefDecoderCompat(f *testing.F) {
 		}
 		encs[i] = enc
 	}
-	liteDec := zstd.NewDecoder()
+	liteDec, err := zstd.NewDecoder()
+	if err != nil {
+		f.Fatal(err)
+	}
 
 	var compressed, got []byte
 	f.Fuzz(func(t *testing.T, data []byte, levelHint int) {
@@ -103,9 +108,10 @@ func FuzzRefBothDecoders(f *testing.F) {
 	}
 	defer refDec.Close()
 
-	dec := zstd.NewDecoder()
-	dec.SetMaxWindowSize(maxWindow)
-	liteDec := zstd.NewReader(bytes.NewReader(nil), dec)
+	liteDec, err := zstd.NewReader(bytes.NewReader(nil), zstd.WithDecoderMaxWindow(maxWindow))
+	if err != nil {
+		f.Fatal(err)
+	}
 	var refResult []byte
 	f.Fuzz(func(t *testing.T, data []byte) {
 		// Empty input: parent accepts (returns nil), lite rejects (ErrCorrupted).
@@ -132,7 +138,6 @@ func FuzzRefRawDictCompat(f *testing.F) {
 	f.Add(testData(256), testData(128))
 	f.Add(testData(1024), testData(512))
 
-	enc := zstd.NewEncoder()
 	var compressed, got []byte
 	refDec, err := ref.NewReader(nil)
 	if err != nil {
@@ -144,7 +149,6 @@ func FuzzRefRawDictCompat(f *testing.F) {
 		f.Fatal(err)
 	}
 	defer refEnc.Close()
-	dec := zstd.NewDecoder()
 
 	f.Fuzz(func(t *testing.T, dictData, payload []byte) {
 		if len(dictData) == 0 || len(payload) == 0 {
@@ -158,9 +162,13 @@ func FuzzRefRawDictCompat(f *testing.F) {
 		}
 
 		// Encode with new std, decode with reference.
-		enc.SetRawDict(dictData)
+		encOpts := []zstd.EncoderOption{zstd.WithEncoderRawDict(dictData)}
 		if len(payload) > 0 {
-			enc.SetLevel(int(payload[0] % 10))
+			encOpts = append(encOpts, zstd.WithEncoderLevel(int(payload[0]%10)))
+		}
+		enc, err := zstd.NewEncoder(encOpts...)
+		if err != nil {
+			t.Fatal(err)
 		}
 		compressed = enc.AppendCompress(compressed[:0], payload)
 		err = refDec.ResetWithOptions(nil, ref.WithDecoderDictRaw(0, dictData))
@@ -178,7 +186,10 @@ func FuzzRefRawDictCompat(f *testing.F) {
 			t.Fatal(err)
 		}
 		compressed = refEnc.EncodeAll(payload, compressed[:0])
-		dec.SetRawDict(dictData)
+		dec, err := zstd.NewDecoder(zstd.WithDecoderRawDict(dictData))
+		if err != nil {
+			t.Fatal(err)
+		}
 		got, err = dec.AppendDecompress(got[:0], compressed)
 		if err != nil {
 			var refErr error
@@ -216,8 +227,6 @@ func FuzzRefDictCompat(f *testing.F) {
 	f.Add(dictFor(testData(128)), testData(128))
 	f.Add(dictFor(testData(1024)), testData(512))
 
-	enc := zstd.NewEncoder()
-	dec := zstd.NewDecoder()
 	refDec, err := ref.NewReader(nil)
 	if err != nil {
 		f.Fatal(err)
@@ -248,9 +257,13 @@ func FuzzRefDictCompat(f *testing.F) {
 		}
 
 		// Encode with new std, decode with reference.
-		enc.AddDict(gotDict)
+		encOpts := []zstd.EncoderOption{zstd.WithEncoderDict(gotDict)}
 		if len(payload) > 0 {
-			enc.SetLevel(int(payload[0] % 10))
+			encOpts = append(encOpts, zstd.WithEncoderLevel(int(payload[0]%10)))
+		}
+		enc, err := zstd.NewEncoder(encOpts...)
+		if err != nil {
+			t.Fatal(err)
 		}
 		compressed = enc.AppendCompress(compressed[:0], payload)
 		err = refDec.ResetWithOptions(nil, ref.WithDecoderDicts(dictData))
@@ -264,7 +277,10 @@ func FuzzRefDictCompat(f *testing.F) {
 
 		// Encode with reference, decode with new std.
 		compressed = refEnc.EncodeAll(payload, compressed[:0])
-		dec.AddDict(gotDict)
+		dec, err := zstd.NewDecoder(zstd.WithDecoderDict(gotDict))
+		if err != nil {
+			t.Fatal(err)
+		}
 		got, err = dec.AppendDecompress(got[:0], compressed)
 		if err != nil {
 			t.Fatal(err)

@@ -114,8 +114,7 @@ func BenchmarkAppendCompress(b *testing.B) {
 	for _, input := range benchInputs {
 		for _, lvl := range benchLevels {
 			b.Run(input.name+"/"+lvl.name, func(b *testing.B) {
-				e := NewEncoder()
-				_ = e.SetLevel(lvl.level)
+				e := mustEncoder(b, WithEncoderLevel(lvl.level))
 				var dst []byte
 				b.SetBytes(int64(len(input.data)))
 				b.ReportAllocs()
@@ -142,9 +141,7 @@ func BenchmarkWrite(b *testing.B) {
 		for _, lvl := range benchLevels {
 			b.Run(input.name+"/"+lvl.name, func(b *testing.B) {
 				var cw countWriter
-				e := NewEncoder()
-				_ = e.SetLevel(lvl.level)
-				w := NewWriter(&cw, e)
+				w := mustWriter(b, &cw, WithEncoderLevel(lvl.level))
 				b.SetBytes(int64(len(input.data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -166,9 +163,7 @@ func BenchmarkReadFrom(b *testing.B) {
 		for _, lvl := range benchLevels {
 			b.Run(input.name+"/"+lvl.name, func(b *testing.B) {
 				var cw countWriter
-				e := NewEncoder()
-				_ = e.SetLevel(lvl.level)
-				w := NewWriter(&cw, e)
+				w := mustWriter(b, &cw, WithEncoderLevel(lvl.level))
 				b.SetBytes(int64(len(input.data)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -191,9 +186,8 @@ type preCompressed struct {
 	compressed []byte
 }
 
-func preCompress(inputs []benchInput, level int) []preCompressed {
-	e := NewEncoder()
-	_ = e.SetLevel(level)
+func preCompress(b *testing.B, inputs []benchInput, level int) []preCompressed {
+	e := mustEncoder(b, WithEncoderLevel(level))
 	out := make([]preCompressed, len(inputs))
 	for i, in := range inputs {
 		out[i] = preCompressed{
@@ -207,10 +201,10 @@ func preCompress(inputs []benchInput, level int) []preCompressed {
 
 func BenchmarkAppendDecompress(b *testing.B) {
 	for _, lvl := range benchLevels {
-		pcs := preCompress(benchInputs, lvl.level)
+		pcs := preCompress(b, benchInputs, lvl.level)
 		for _, pc := range pcs {
 			b.Run(pc.name+"/"+lvl.name, func(b *testing.B) {
-				d := NewDecoder()
+				d := mustDecoder(b)
 				var dst []byte
 				b.SetBytes(int64(len(pc.src)))
 				b.ReportAllocs()
@@ -225,10 +219,10 @@ func BenchmarkAppendDecompress(b *testing.B) {
 
 func BenchmarkRead(b *testing.B) {
 	for _, lvl := range benchLevels {
-		pcs := preCompress(benchInputs, lvl.level)
+		pcs := preCompress(b, benchInputs, lvl.level)
 		for _, pc := range pcs {
 			b.Run(pc.name+"/"+lvl.name, func(b *testing.B) {
-				r := NewReader(bytes.NewReader(pc.compressed), nil)
+				r := mustReader(b, bytes.NewReader(pc.compressed))
 				b.SetBytes(int64(len(pc.src)))
 				b.ResetTimer()
 				for range b.N {
@@ -242,10 +236,10 @@ func BenchmarkRead(b *testing.B) {
 
 func BenchmarkWriteTo(b *testing.B) {
 	for _, lvl := range benchLevels {
-		pcs := preCompress(benchInputs, lvl.level)
+		pcs := preCompress(b, benchInputs, lvl.level)
 		for _, pc := range pcs {
 			b.Run(pc.name+"/"+lvl.name, func(b *testing.B) {
-				r := NewReader(bytes.NewReader(pc.compressed), nil)
+				r := mustReader(b, bytes.NewReader(pc.compressed))
 				b.SetBytes(int64(len(pc.src)))
 				b.ReportAllocs()
 				b.ResetTimer()
@@ -264,8 +258,7 @@ func BenchmarkAppendCompress_Dict(b *testing.B) {
 
 	for _, lvl := range benchLevels {
 		b.Run("no-dict/"+lvl.name, func(b *testing.B) {
-			e := NewEncoder()
-			_ = e.SetLevel(lvl.level)
+			e := mustEncoder(b, WithEncoderLevel(lvl.level))
 			var dst []byte
 			b.SetBytes(int64(len(src)))
 			b.ResetTimer()
@@ -276,9 +269,7 @@ func BenchmarkAppendCompress_Dict(b *testing.B) {
 			b.ReportMetric(100-100*float64(len(dst))/float64(len(src)), "reduction%")
 		})
 		b.Run("with-dict/"+lvl.name, func(b *testing.B) {
-			e := NewEncoder()
-			_ = e.SetLevel(lvl.level)
-			e.SetRawDict(dict)
+			e := mustEncoder(b, WithEncoderLevel(lvl.level), WithEncoderRawDict(dict))
 			var dst []byte
 			b.SetBytes(int64(len(src)))
 			b.ResetTimer()
@@ -296,14 +287,11 @@ func BenchmarkAppendDecompress_Dict(b *testing.B) {
 	src := genJSON(64*1024, 91)
 
 	for _, lvl := range benchLevels {
-		e := NewEncoder()
-		_ = e.SetLevel(lvl.level)
-		e.SetRawDict(dict)
+		e := mustEncoder(b, WithEncoderLevel(lvl.level), WithEncoderRawDict(dict))
 		compressed := e.AppendCompress(nil, src)
 
 		b.Run(lvl.name, func(b *testing.B) {
-			d := NewDecoder()
-			d.SetRawDict(dict)
+			d := mustDecoder(b, WithDecoderRawDict(dict))
 			var dst []byte
 			b.SetBytes(int64(len(src)))
 			b.ResetTimer()
@@ -318,19 +306,19 @@ func BenchmarkAppendDecompress_Dict(b *testing.B) {
 
 func BenchmarkNewWriter(b *testing.B) {
 	for range b.N {
-		_ = NewWriter(io.Discard, nil)
+		_, _ = NewWriter(io.Discard)
 	}
 }
 
 func BenchmarkNewReader(b *testing.B) {
 	for range b.N {
-		_ = NewReader(nil, nil)
+		_, _ = NewReader(nil)
 	}
 }
 
 func BenchmarkWriterReuse(b *testing.B) {
 	src := bytes.Repeat([]byte("reuse bench "), 500)
-	w := NewWriter(io.Discard, nil)
+	w := mustWriter(b, io.Discard)
 	b.SetBytes(int64(len(src)))
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -343,9 +331,9 @@ func BenchmarkWriterReuse(b *testing.B) {
 
 func BenchmarkReaderReuse(b *testing.B) {
 	src := bytes.Repeat([]byte("reuse bench "), 500)
-	e := NewEncoder()
+	e := mustEncoder(b)
 	compressed := e.AppendCompress(nil, src)
-	r := NewReader(bytes.NewReader(compressed), nil)
+	r := mustReader(b, bytes.NewReader(compressed))
 	b.SetBytes(int64(len(src)))
 	b.ReportAllocs()
 	b.ResetTimer()

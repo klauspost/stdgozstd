@@ -85,7 +85,7 @@ func (e *ErrWindowSizeExceeded) Is(target error) bool {
 }
 
 // ErrDecodedSizeExceeded is returned when decompression would produce more
-// bytes than the limit configured with [Decoder.SetMaxSize].
+// bytes than the limit configured with [WithDecoderMaxSize].
 type ErrDecodedSizeExceeded struct {
 	Allowed, Produced int64
 }

@@ -32,7 +32,7 @@ func (z *Reader) ensureInit() {
 		return
 	}
 	if z.cfg == nil {
-		z.cfg = NewDecoder()
+		z.cfg = &Decoder{}
 	}
 	z.cfg.ensureInit()
 	z.initialized = true
@@ -52,20 +52,20 @@ func (z *Reader) ensureInit() {
 }
 
 // NewReader creates a new Reader that decompresses from r using the
-// configuration held by d. If d is nil, default configuration is used.
+// configuration built from opts. With no options, default configuration is used.
 // If r is nil, the Reader must be pointed at a source with [Reader.Reset]
 // before streaming.
-func NewReader(r io.Reader, d *Decoder) *Reader {
-	if d == nil {
-		d = NewDecoder()
+func NewReader(r io.Reader, opts ...DecoderOption) (*Reader, error) {
+	d, err := NewDecoder(opts...)
+	if err != nil {
+		return nil, err
 	}
-	d.ensureInit()
 	z := &Reader{cfg: d}
 	z.ensureInit()
 	if r != nil {
 		z.rw.r = r
 	}
-	return z
+	return z, nil
 }
 
 // Reset discards the Reader's state and makes it read from r.
