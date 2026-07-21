@@ -185,6 +185,10 @@ func (w *Writer) Close() error {
 	if w.enc == nil {
 		return nil
 	}
+	defer func() {
+		putEncoder(w.enc)
+		w.enc = nil
+	}()
 	err := w.nextBlock(true)
 	if err != nil {
 		return err
