@@ -100,8 +100,8 @@ func (b *bitReader) overread() bool {
 }
 
 // remain returns the number of unread bits.
-func (b *bitReader) remain() uint {
-	return 8*uint(b.cursor) + 64 - uint(b.bitsRead)
+func (b *bitReader) remain() int {
+	return 8*b.cursor + 64 - int(b.bitsRead)
 }
 
 // close verifies the stream was fully consumed.
