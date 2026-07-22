@@ -108,3 +108,19 @@ func TestBitReaderInitZeroEnd(t *testing.T) {
 		t.Fatal("expected error for zero end byte")
 	}
 }
+
+func TestBitReaderRemain(t *testing.T) {
+	var br bitReader
+	br.cursor = 2
+	br.bitsRead = 64
+	if got := br.remain(); got != 16 {
+		t.Fatalf("got %d, want 16", got)
+	}
+
+	br.cursor = 0
+	br.bitsRead = 70
+	if got := br.remain(); got != -6 {
+		t.Fatalf("got %d, want -6", got)
+	}
+}
+
