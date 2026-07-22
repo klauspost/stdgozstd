@@ -61,8 +61,9 @@ Bytes interface:
 Configuration is supplied through functional options that are shared by each
 side's constructors: the same `EncoderOption` values configure `NewEncoder`
 (one-shot) and `NewWriter` (streaming); likewise `DecoderOption` for
-`NewDecoder` and `NewReader`. Configuration is fixed at construction and
-immutable afterwards.
+`NewDecoder` and `NewReader`. The one-shot `Encoder`/`Decoder` types are
+immutable after construction; the streaming `Writer`/`Reader` can be
+reconfigured on `Reset` (see below).
 
 ```go
 type Encoder struct{ /* no exported fields */ }
@@ -74,6 +75,7 @@ func WithLowMemory(bool) EncoderOption
 func WithEncoderCRC(bool) EncoderOption
 func WithEncoderDict(*Dict) EncoderOption
 func WithEncoderRawDict([]byte) EncoderOption
+func WithContentSize(int64) EncoderOption       // streaming Writer only; declares total size
 func (*Encoder) AppendCompress(dst, src []byte) []byte
 
 type Decoder struct{ /* no exported fields */ }
@@ -92,12 +94,17 @@ default configuration:
 ```go
 func NewWriter(w io.Writer, opts ...EncoderOption) (*Writer, error)
 func NewReader(r io.Reader, opts ...DecoderOption) (*Reader, error)
+func (*Writer) Reset(w io.Writer, opts ...EncoderOption) error
+func (*Reader) Reset(r io.Reader, opts ...DecoderOption) error
 ```
 
 Options are applied in order, so a later option overrides an earlier one (e.g.
-`WithWindowSize` after `WithEncoderLevel`). To use different settings, construct
-a new `Encoder`/`Writer` (or `Decoder`/`Reader`); `Reset` swaps the
-destination/source and preserves the configuration.
+`WithWindowSize` after `WithEncoderLevel`).
+
+`Reset` reuses a `Writer`/`Reader` for a new stream. With no options it swaps the
+destination/source and preserves the configuration; any options passed reconfigure
+it for the new stream and persist until changed. Every option may be changed this
+way. Reconfiguration only happens on `Reset`, never mid-stream.
 
 `WithDecoderMaxSize(n)` caps the total number of decompressed bytes as a
 decompression-bomb guard. The default, 0, disables the limit.

@@ -360,3 +360,39 @@ func randTestBytes(n int, seed uint64) []byte {
 	}
 	return b
 }
+
+func mustEncoder(tb testing.TB, opts ...EncoderOption) *Encoder {
+	tb.Helper()
+	e, err := NewEncoder(opts...)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return e
+}
+
+func mustDecoder(tb testing.TB, opts ...DecoderOption) *Decoder {
+	tb.Helper()
+	d, err := NewDecoder(opts...)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return d
+}
+
+func mustWriter(tb testing.TB, w io.Writer, opts ...EncoderOption) *Writer {
+	tb.Helper()
+	wr, err := NewWriter(w, opts...)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return wr
+}
+
+func mustReader(tb testing.TB, r io.Reader, opts ...DecoderOption) *Reader {
+	tb.Helper()
+	z, err := NewReader(r, opts...)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return z
+}
