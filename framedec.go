@@ -158,13 +158,11 @@ func (d *frameDec) reset(br byteBuffer) error {
 		case 1:
 			d.FrameContentSize = uint64(b[0])
 		case 2:
-			d.FrameContentSize = uint64(b[0]) | (uint64(b[1]) << 8) + 256
+			d.FrameContentSize = uint64(binary.LittleEndian.Uint16(b)) + 256
 		case 4:
-			d.FrameContentSize = uint64(b[0]) | (uint64(b[1]) << 8) | (uint64(b[2]) << 16) | (uint64(b[3]) << 24)
+			d.FrameContentSize = uint64(binary.LittleEndian.Uint32(b))
 		case 8:
-			d1 := uint32(b[0]) | (uint32(b[1]) << 8) | (uint32(b[2]) << 16) | (uint32(b[3]) << 24)
-			d2 := uint32(b[4]) | (uint32(b[5]) << 8) | (uint32(b[6]) << 16) | (uint32(b[7]) << 24)
-			d.FrameContentSize = uint64(d1) | (uint64(d2) << 32)
+			d.FrameContentSize = binary.LittleEndian.Uint64(b)
 		}
 	}
 
