@@ -25,7 +25,7 @@ func FuzzRoundTrip(f *testing.F) {
 		// Otherwise CRC will always be missing.
 		level := 3
 		if len(data) > 0 {
-			level = int(data[0] % BestCompression)
+			level = int(data[0] % (BestCompression + 1))
 		}
 		e := mustEncoder(t, WithEncoderLevel(level), WithEncoderCRC(false))
 		compressed = e.AppendCompress(compressed[:0], data)

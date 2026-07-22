@@ -136,17 +136,9 @@ func (z *Reader) Read(p []byte) (int, error) {
 			z.decodedCount = 0
 			z.frame.history.reset()
 
-			if z.frame.DictionaryID != 0 {
-				d, ok := z.cfg.dicts[z.frame.DictionaryID]
-				if !ok {
-					z.err = ErrUnknownDictionary
-					return written, z.err
-				}
-				z.frame.history.setDict(d)
-			} else if d, ok := z.cfg.dicts[0]; ok {
-				// Raw dict (ID 0): only use content for match references.
-				z.frame.history.dict = d
-				z.frame.history.decoders.dict = d.content
+			if err := applyFrameDict(z.frame, z.cfg.dicts); err != nil {
+				z.err = err
+				return written, z.err
 			}
 		}
 
@@ -259,16 +251,9 @@ func (z *Reader) WriteTo(w io.Writer) (int64, error) {
 			z.decodedCount = 0
 			z.frame.history.reset()
 
-			if z.frame.DictionaryID != 0 {
-				d, ok := z.cfg.dicts[z.frame.DictionaryID]
-				if !ok {
-					z.err = ErrUnknownDictionary
-					return written, z.err
-				}
-				z.frame.history.setDict(d)
-			} else if d, ok := z.cfg.dicts[0]; ok {
-				z.frame.history.dict = d
-				z.frame.history.decoders.dict = d.content
+			if err := applyFrameDict(z.frame, z.cfg.dicts); err != nil {
+				z.err = err
+				return written, z.err
 			}
 		}
 

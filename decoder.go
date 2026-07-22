@@ -179,15 +179,8 @@ func (d *Decoder) AppendDecompress(dst, src []byte) ([]byte, error) {
 		frameSeen = true
 		frame.history.reset()
 
-		if frame.DictionaryID != 0 {
-			dd, ok := d.dicts[frame.DictionaryID]
-			if !ok {
-				return dst, ErrUnknownDictionary
-			}
-			frame.history.setDict(dd)
-		} else if dd, ok := d.dicts[0]; ok {
-			frame.history.dict = dd
-			frame.history.decoders.dict = dd.content
+		if err := applyFrameDict(frame, d.dicts); err != nil {
+			return dst, err
 		}
 
 		var err2 error

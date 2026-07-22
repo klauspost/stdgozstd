@@ -60,6 +60,24 @@ func newFrameDec(o decoderOptions) *frameDec {
 	return &frameDec{o: o}
 }
 
+// applyFrameDict wires the frame's dictionary from dicts using the frame's
+// DictionaryID: a nonzero ID must be present (else [ErrUnknownDictionary]),
+// while ID 0 falls back to a raw dictionary used only for match references.
+func applyFrameDict(frame *frameDec, dicts map[uint32]*dict) error {
+	if frame.DictionaryID != 0 {
+		d, ok := dicts[frame.DictionaryID]
+		if !ok {
+			return ErrUnknownDictionary
+		}
+		frame.history.setDict(d)
+	} else if d, ok := dicts[0]; ok {
+		// Raw dict (ID 0): only use content for match references.
+		frame.history.dict = d
+		frame.history.decoders.dict = d.content
+	}
+	return nil
+}
+
 // reset parses the frame header from br, preparing for block decoding.
 func (d *frameDec) reset(br byteBuffer) error {
 	d.HasCheckSum = false

@@ -273,7 +273,11 @@ func TestConcurrentReadersFromSameFrame(t *testing.T) {
 	for range goroutines {
 		go func() {
 			defer wg.Done()
-			r := mustReader(t, bytes.NewReader(compressed))
+			r, err := NewReader(bytes.NewReader(compressed))
+			if err != nil {
+				errs <- err
+				return
+			}
 			got, err := io.ReadAll(r)
 			r.Close()
 			if err != nil {

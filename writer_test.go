@@ -188,7 +188,6 @@ func TestWriter_Write(t *testing.T) {
 		src := []byte("no checksum test data, slightly longer to be interesting")
 		var buf bytes.Buffer
 		w := mustWriter(t, &buf, WithEncoderCRC(false))
-		w.Reset(&buf)
 		_, _ = w.Write(src)
 		if err := w.Close(); err != nil {
 			t.Fatal(err)
@@ -634,7 +633,6 @@ func roundTripLevel(t *testing.T, src []byte, level int) {
 	t.Helper()
 	var buf bytes.Buffer
 	w := mustWriter(t, &buf, WithEncoderLevel(level))
-	w.Reset(&buf)
 	if _, err := w.Write(src); err != nil {
 		t.Fatal("write:", err)
 	}

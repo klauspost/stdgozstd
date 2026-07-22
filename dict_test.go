@@ -259,7 +259,6 @@ func TestWithEncoderRawDict(t *testing.T) {
 			t.Run("", func(t *testing.T) {
 				var buf bytes.Buffer
 				w := mustWriter(t, &buf, WithEncoderLevel(level), WithEncoderRawDict(dictContent))
-				w.Reset(&buf)
 				if _, err := w.Write(src); err != nil {
 					t.Fatal(err)
 				}
@@ -408,7 +407,6 @@ func TestWithEncoderRawDict(t *testing.T) {
 
 		var buf bytes.Buffer
 		w := mustWriter(t, &buf, WithEncoderRawDict(dictContent), WithEncoderRawDict(nil)) // second option clears dict
-		w.Reset(&buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
 		}
@@ -433,7 +431,6 @@ func TestWithEncoderRawDict(t *testing.T) {
 
 		var buf bytes.Buffer
 		w := mustWriter(t, &buf, WithEncoderRawDict(dictContent), WithEncoderDict(nil)) // second option clears dict
-		w.Reset(&buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
 		}
@@ -520,7 +517,6 @@ func TestWithEncoderDict(t *testing.T) {
 
 		var buf bytes.Buffer
 		w := mustWriter(t, &buf, WithEncoderDict(d))
-		w.Reset(&buf)
 		if _, err := w.Write(src); err != nil {
 			t.Fatal(err)
 		}
