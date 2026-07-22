@@ -69,12 +69,19 @@ func NewReader(r io.Reader, opts ...DecoderOption) (*Reader, error) {
 }
 
 // Reset discards the Reader's state and makes it read from r.
-// Configuration is preserved.
+// Options in opts are applied to the configuration first; any option may be
+// changed and takes effect from the next frame. With no options the current
+// configuration is preserved.
 // If r is nil, Reset is equivalent to [Reader.Close].
-func (z *Reader) Reset(r io.Reader) error {
+func (z *Reader) Reset(r io.Reader, opts ...DecoderOption) error {
 	z.ensureInit()
 	if r == nil {
 		return z.Close()
+	}
+	for _, o := range opts {
+		if err := o(z.cfg); err != nil {
+			return err
+		}
 	}
 	z.rw.r = r
 	z.buf = nil

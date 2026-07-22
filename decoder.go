@@ -46,8 +46,9 @@ func NewDecoder(opts ...DecoderOption) (*Decoder, error) {
 	return d, nil
 }
 
-// DecoderOption configures a [Decoder]. Options are passed to [NewDecoder] and
-// [NewReader].
+// DecoderOption configures a [Decoder]. Options are passed to [NewDecoder],
+// [NewReader], and [Reader.Reset]. Every option may be changed via
+// [Reader.Reset]; the new configuration applies from the next frame.
 type DecoderOption func(*Decoder) error
 
 // WithDecoderMaxWindow sets the maximum allowed window size for decoding.

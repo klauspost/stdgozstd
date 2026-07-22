@@ -1078,6 +1078,38 @@ func TestReader_Reset(t *testing.T) {
 			r.Close()
 		}
 	})
+
+	t.Run("change_max_size", func(t *testing.T) {
+		payload := bytes.Repeat([]byte("x"), 4096)
+		frame := mustEncoder(t).AppendCompress(nil, payload)
+
+		// A small limit rejects the stream.
+		r := mustReader(t, bytes.NewReader(frame), WithDecoderMaxSize(100))
+		defer func() { _ = r.Close() }()
+		var de *ErrDecodedSizeExceeded
+		if _, err := io.ReadAll(r); !errors.As(err, &de) {
+			t.Fatalf("expected ErrDecodedSizeExceeded, got %v", err)
+		}
+
+		// Resetting with a larger limit accepts the same stream.
+		if err := r.Reset(bytes.NewReader(frame), WithDecoderMaxSize(int64(len(payload)))); err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, payload) {
+			t.Fatal("mismatch")
+		}
+	})
+
+	t.Run("invalid_option", func(t *testing.T) {
+		r := mustReader(t, nil)
+		if err := r.Reset(bytes.NewReader(nil), WithDecoderMaxSize(-1)); err == nil {
+			t.Fatal("expected error for negative max size")
+		}
+	})
 }
 
 func TestReader_ZeroValue(t *testing.T) {

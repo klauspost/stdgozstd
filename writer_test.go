@@ -283,40 +283,163 @@ func TestWriter_Close(t *testing.T) {
 }
 
 func TestWriter_Reset(t *testing.T) {
-	src1 := []byte("first stream content")
-	src2 := []byte("second stream content after reset")
+	t.Run("preserves_config_across_streams", func(t *testing.T) {
+		src1 := []byte("first stream content")
+		src2 := []byte("second stream content after reset")
 
-	var buf1, buf2 bytes.Buffer
-	w := mustWriter(t, &buf1)
-	_, _ = w.Write(src1)
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
+		var buf1, buf2 bytes.Buffer
+		w := mustWriter(t, &buf1)
+		_, _ = w.Write(src1)
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
 
-	w.Reset(&buf2)
-	_, _ = w.Write(src2)
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
+		if err := w.Reset(&buf2); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write(src2)
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
 
-	// Verify both streams.
-	for i, tc := range []struct {
-		compressed []byte
-		want       []byte
-	}{
-		{buf1.Bytes(), src1},
-		{buf2.Bytes(), src2},
-	} {
-		r := mustReader(t, bytes.NewReader(tc.compressed))
+		for i, tc := range []struct {
+			compressed []byte
+			want       []byte
+		}{
+			{buf1.Bytes(), src1},
+			{buf2.Bytes(), src2},
+		} {
+			r := mustReader(t, bytes.NewReader(tc.compressed))
+			got, err := io.ReadAll(r)
+			_ = r.Close()
+			if err != nil {
+				t.Fatalf("stream %d: %v", i, err)
+			}
+			if !bytes.Equal(got, tc.want) {
+				t.Fatalf("stream %d: mismatch", i)
+			}
+		}
+	})
+
+	t.Run("change_options", func(t *testing.T) {
+		src := bytes.Repeat([]byte("reconfigure me across resets. "), 400)
+		w := mustWriter(t, nil)
+		for _, opts := range [][]EncoderOption{
+			{WithEncoderLevel(1)},
+			{WithEncoderLevel(9), WithEncoderCRC(false)},
+			{WithEncoderLevel(3), WithWindowSize(1 << 20), WithLowMemory(true)},
+		} {
+			var buf bytes.Buffer
+			if err := w.Reset(&buf, opts...); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.Write(src); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			r := mustReader(t, bytes.NewReader(buf.Bytes()))
+			got, err := io.ReadAll(r)
+			_ = r.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, src) {
+				t.Fatal("mismatch")
+			}
+		}
+	})
+
+	t.Run("change_level_changes_output", func(t *testing.T) {
+		src := bytes.Repeat([]byte("compressible data pattern. "), 500)
+		w := mustWriter(t, nil)
+
+		var raw bytes.Buffer
+		if err := w.Reset(&raw, WithEncoderLevel(0)); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write(src)
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		var best bytes.Buffer
+		if err := w.Reset(&best, WithEncoderLevel(9)); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write(src)
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		if raw.Len() <= best.Len() {
+			t.Fatalf("level 0 output (%d) not larger than level 9 (%d)", raw.Len(), best.Len())
+		}
+		for _, b := range [][]byte{raw.Bytes(), best.Bytes()} {
+			r := mustReader(t, bytes.NewReader(b))
+			got, _ := io.ReadAll(r)
+			_ = r.Close()
+			if !bytes.Equal(got, src) {
+				t.Fatal("mismatch")
+			}
+		}
+	})
+
+	t.Run("invalid_option", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := mustWriter(t, nil)
+		if err := w.Reset(&buf, WithWindowSize(1)); err == nil {
+			t.Fatal("expected error for out-of-range window size")
+		}
+	})
+
+	t.Run("content_size_known", func(t *testing.T) {
+		src := []byte("content size test data, exactly this long")
+		var buf bytes.Buffer
+		w := mustWriter(t, &buf)
+		if err := w.Reset(&buf, WithContentSize(int64(len(src)))); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(src); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		r := mustReader(t, bytes.NewReader(buf.Bytes()))
 		got, err := io.ReadAll(r)
 		_ = r.Close()
 		if err != nil {
-			t.Fatalf("stream %d: %v", i, err)
+			t.Fatal(err)
 		}
-		if !bytes.Equal(got, tc.want) {
-			t.Fatalf("stream %d: mismatch", i)
+		if !bytes.Equal(got, src) {
+			t.Fatal("mismatch")
 		}
-	}
+	})
+
+	t.Run("content_size_negative_is_error", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := mustWriter(t, nil)
+		if err := w.Reset(&buf, WithContentSize(-1)); err == nil {
+			t.Fatal("expected error for negative content size")
+		}
+	})
+
+	t.Run("content_size_mismatch", func(t *testing.T) {
+		var buf bytes.Buffer
+		w := mustWriter(t, &buf)
+		if err := w.Reset(&buf, WithContentSize(100)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte("short")); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err == nil {
+			t.Fatal("expected error for content size mismatch")
+		}
+	})
 }
 
 func TestWriter_Flush(t *testing.T) {
@@ -503,67 +626,6 @@ func TestWriter_ReadFrom(t *testing.T) {
 		}
 		if !bytes.Equal(got, src) {
 			t.Fatal("mismatch")
-		}
-	})
-}
-
-func TestWriter_ResetContentSize(t *testing.T) {
-	t.Run("basic", func(t *testing.T) {
-		src := []byte("content size test data, exactly this long")
-		var buf bytes.Buffer
-		w := mustWriter(t, &buf)
-		w.ResetContentSize(&buf, int64(len(src)))
-		if _, err := w.Write(src); err != nil {
-			t.Fatal(err)
-		}
-		if err := w.Close(); err != nil {
-			t.Fatal(err)
-		}
-
-		r := mustReader(t, bytes.NewReader(buf.Bytes()))
-		got, err := io.ReadAll(r)
-		r.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(got, src) {
-			t.Fatal("mismatch")
-		}
-	})
-
-	t.Run("negative", func(t *testing.T) {
-		src := []byte("negative content size means unknown")
-		var buf bytes.Buffer
-		w := mustWriter(t, &buf)
-		w.ResetContentSize(&buf, -1)
-		if _, err := w.Write(src); err != nil {
-			t.Fatal(err)
-		}
-		if err := w.Close(); err != nil {
-			t.Fatal(err)
-		}
-
-		r := mustReader(t, bytes.NewReader(buf.Bytes()))
-		got, err := io.ReadAll(r)
-		r.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(got, src) {
-			t.Fatal("mismatch")
-		}
-	})
-
-	t.Run("mismatch", func(t *testing.T) {
-		var buf bytes.Buffer
-		w := mustWriter(t, &buf)
-		w.ResetContentSize(&buf, 100)
-		if _, err := w.Write([]byte("short")); err != nil {
-			t.Fatal(err)
-		}
-		err := w.Close()
-		if err == nil {
-			t.Fatal("expected error for content size mismatch")
 		}
 	})
 }

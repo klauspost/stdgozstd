@@ -458,6 +458,33 @@ func TestWithEncoderCRC(t *testing.T) {
 	}
 }
 
+func TestWithContentSize(t *testing.T) {
+	t.Run("append_compress_ignores", func(t *testing.T) {
+		src := bytes.Repeat([]byte("append compress ignores content size. "), 50)
+
+		plain := mustEncoder(t).AppendCompress(nil, src)
+		// A bogus content size must not affect one-shot output.
+		withCS := mustEncoder(t, WithContentSize(999999)).AppendCompress(nil, src)
+		if !bytes.Equal(plain, withCS) {
+			t.Fatal("AppendCompress output changed by WithContentSize")
+		}
+
+		got, err := mustDecoder(t).AppendDecompress(nil, withCS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, src) {
+			t.Fatal("mismatch")
+		}
+	})
+
+	t.Run("negative_is_error", func(t *testing.T) {
+		if _, err := NewEncoder(WithContentSize(-1)); err == nil {
+			t.Fatal("expected error for negative content size")
+		}
+	})
+}
+
 func TestEncoder_ZeroValue(t *testing.T) {
 	t.Run("append_compress", func(t *testing.T) {
 		src := bytes.Repeat([]byte("zero value writer "), 100)

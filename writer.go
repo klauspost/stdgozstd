@@ -49,26 +49,23 @@ func NewWriter(w io.Writer, opts ...EncoderOption) (*Writer, error) {
 	}
 	wr := &Writer{cfg: e}
 	if w != nil {
-		wr.Reset(w)
+		if err := wr.Reset(w); err != nil {
+			return nil, err
+		}
 	}
 	return wr, nil
 }
 
-// ResetContentSize resets the Writer for a new stream to wr and records
-// the uncompressed content size in the frame header. If size is negative
-// the content size is omitted.
-func (w *Writer) ResetContentSize(wr io.Writer, size int64) {
+// Reset discards the Writer's state and prepares it to write a new frame to wr.
+// Options in opts are applied to the configuration first; any option may be
+// changed. With no options the current configuration is preserved.
+func (w *Writer) Reset(wr io.Writer, opts ...EncoderOption) error {
 	w.ensureInit()
-	w.Reset(wr)
-	if size >= 0 {
-		w.contentSize = size
+	for _, o := range opts {
+		if err := o(w.cfg); err != nil {
+			return err
+		}
 	}
-}
-
-// Reset discards the Writer's state and prepares it to write a new frame
-// to wr. Configuration is preserved.
-func (w *Writer) Reset(wr io.Writer) {
-	w.ensureInit()
 	if cap(w.filling) == 0 {
 		w.filling = make([]byte, 0, w.cfg.blockSize)
 	}
@@ -87,7 +84,8 @@ func (w *Writer) Reset(wr io.Writer) {
 	w.err = nil
 	w.nWritten = 0
 	w.nInput = 0
-	w.contentSize = 0
+	w.contentSize = w.cfg.contentSize
+	return nil
 }
 
 // Write compresses p and writes it to the underlying writer.

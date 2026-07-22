@@ -260,7 +260,9 @@ func TestRefLiteEncodeContentSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.ResetContentSize(&buf, int64(len(src)))
+	if err := w.Reset(&buf, zstd.WithContentSize(int64(len(src)))); err != nil {
+		t.Fatal(err)
+	}
 	w.Write(src)
 	w.Close()
 	got := refDecode(t, buf.Bytes())

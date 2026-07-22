@@ -63,11 +63,12 @@ func encoderCategory(level int) int {
 // via [Encoder.AppendCompress]. Configuration is fixed at construction via
 // [EncoderOption] values and is immutable afterwards.
 type Encoder struct {
-	level     int
-	blockSize int
-	wndSize   int
-	crc       bool
-	lowMem    bool
+	level       int
+	blockSize   int
+	wndSize     int
+	crc         bool
+	lowMem      bool
+	contentSize int64
 
 	dict *dict
 	once sync.Once
@@ -98,8 +99,9 @@ func NewEncoder(opts ...EncoderOption) (*Encoder, error) {
 	return e, nil
 }
 
-// EncoderOption configures an [Encoder]. Options are passed to [NewEncoder] and
-// [NewWriter].
+// EncoderOption configures an [Encoder]. Options are passed to [NewEncoder],
+// [NewWriter], and [Writer.Reset]. Every option may be changed via
+// [Writer.Reset]; the new configuration applies to the next frame.
 type EncoderOption func(*Encoder) error
 
 // WithEncoderLevel sets the compression level. Valid values range from
@@ -201,6 +203,23 @@ func WithEncoderRawDict(b []byte) EncoderOption {
 			return nil
 		}
 		e.dict = &dict{content: b}
+		return nil
+	}
+}
+
+// WithContentSize declares the total uncompressed size of the stream. It is
+// written into the frame header and verified on [Writer.Close]. A negative
+// size is an error; the default, 0, marks the size as unknown.
+//
+// This applies only to the streaming [Writer]; [Encoder.AppendCompress] always
+// records the exact size. Like any option it persists across [Writer.Reset]
+// calls until changed — pass WithContentSize(0) to clear it.
+func WithContentSize(size int64) EncoderOption {
+	return func(e *Encoder) error {
+		if size < 0 {
+			return fmt.Errorf("zstd: content size %d must be >= 0", size)
+		}
+		e.contentSize = size
 		return nil
 	}
 }
