@@ -7,11 +7,390 @@ package zstd
 import (
 	"fmt"
 	"io"
+	"math"
 	"math/bits"
+	"sync"
 
 	"github.com/klauspost/stdgozstd/internal/le"
 	"github.com/klauspost/stdgozstd/internal/xxhash"
 )
+
+// Compression level constants. These map to the levels accepted by
+// [WithEncoderLevel].
+const (
+	DefaultCompression = -1 // level 3
+	NoCompression      = 0  // store blocks without compression
+	BestSpeed          = 1  // lowest compression, fastest speed
+	BestCompression    = 9  // highest compression, slowest speed
+)
+
+// encoderPools caches encoders by category to avoid repeated hash table allocation.
+var encoderPools [5]sync.Pool
+
+// putEncoder returns an encoder to its pool for reuse.
+func putEncoder(enc encoder) {
+	switch enc.(type) {
+	case *rawEncoder:
+		encoderPools[0].Put(enc)
+	case *fastEncoder:
+		encoderPools[1].Put(enc)
+	case *doubleFastEncoder:
+		encoderPools[2].Put(enc)
+	case *betterFastEncoder:
+		encoderPools[3].Put(enc)
+	case *bestFastEncoder:
+		encoderPools[4].Put(enc)
+	}
+}
+
+// encoderCategory maps a compression level to a pool index (0-4).
+func encoderCategory(level int) int {
+	switch {
+	case level == 0:
+		return 0
+	case level <= 2:
+		return 1
+	case level <= 4:
+		return 2
+	case level <= 7:
+		return 3
+	default:
+		return 4
+	}
+}
+
+// Encoder holds compression configuration and provides one-shot compression
+// via [Encoder.AppendCompress]. Configuration is fixed at construction via
+// [EncoderOption] values and is immutable afterwards.
+type Encoder struct {
+	level       int
+	blockSize   int
+	wndSize     int
+	crc         bool
+	lowMem      bool
+	contentSize int64
+
+	dict *dict
+	once sync.Once
+}
+
+// ensureInit lazily applies default configuration on first use.
+func (e *Encoder) ensureInit() {
+	e.once.Do(func() {
+		initPredefined()
+		e.level = 3
+		e.blockSize = maxCompressedBlockSize
+		e.wndSize = 4 << 20
+		e.crc = true
+	})
+}
+
+// NewEncoder returns a new Encoder configured by opts. Options are applied in
+// order; a later option overrides an earlier one. With no options the Encoder
+// uses the default compression level.
+func NewEncoder(opts ...EncoderOption) (*Encoder, error) {
+	e := &Encoder{}
+	e.ensureInit()
+	for _, o := range opts {
+		if err := o(e); err != nil {
+			return nil, err
+		}
+	}
+	return e, nil
+}
+
+// EncoderOption configures an [Encoder]. Options are passed to [NewEncoder],
+// [NewWriter], and [Writer.Reset]. Every option may be changed via
+// [Writer.Reset]; the new configuration applies to the next frame.
+type EncoderOption func(*Encoder) error
+
+// WithEncoderLevel sets the compression level. Valid values range from
+// [NoCompression] (0) to [BestCompression] (9); [DefaultCompression] (-1)
+// selects level 3.
+func WithEncoderLevel(level int) EncoderOption {
+	return func(e *Encoder) error {
+		if level == DefaultCompression {
+			level = 3
+		}
+		if level < NoCompression || level > BestCompression {
+			return fmt.Errorf("zstd: invalid level %d", level)
+		}
+		e.level = level
+		e.blockSize = maxCompressedBlockSize
+		// These mirror zstd default window sizes at levels 1, 3 and 9.
+		switch level {
+		case 0:
+			e.wndSize = 0
+		case 1:
+			e.wndSize = 2 << 20
+		case 2:
+			e.wndSize = 3 << 20
+		case 3:
+			e.wndSize = 4 << 20
+		case 4:
+			e.wndSize = 4 << 20
+		case 5:
+			e.wndSize = 4 << 20
+		case 6:
+			e.wndSize = 5 << 20
+		case 7:
+			e.wndSize = 6 << 20
+		case 8:
+			e.wndSize = 7 << 20
+		case 9:
+			e.wndSize = 8 << 20
+		}
+		return nil
+	}
+}
+
+// WithWindowSize overrides the window size for compression.
+// This allows limiting memory usage both for compression and decompression.
+// Apply it after [WithEncoderLevel] to override the level's default window.
+//
+// n must be in the range [MinWindowSize, MaxWindowSize].
+func WithWindowSize(n int) EncoderOption {
+	return func(e *Encoder) error {
+		if n < MinWindowSize || n > MaxWindowSize {
+			return fmt.Errorf("zstd: window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
+		}
+		e.wndSize = n
+		return nil
+	}
+}
+
+// WithLowMemory controls whether the encoder should trade speed for
+// lower memory usage.
+func WithLowMemory(b bool) EncoderOption {
+	return func(e *Encoder) error {
+		e.lowMem = b
+		return nil
+	}
+}
+
+// WithEncoderCRC controls whether a xxHash-64 checksum is appended to each
+// frame. The default is true.
+func WithEncoderCRC(b bool) EncoderOption {
+	return func(e *Encoder) error {
+		e.crc = b
+		return nil
+	}
+}
+
+// WithEncoderDict registers a parsed dictionary for compression.
+// Passing nil removes any previously configured dictionary.
+func WithEncoderDict(d *Dict) EncoderOption {
+	return func(e *Encoder) error {
+		if d == nil {
+			e.dict = nil
+			return nil
+		}
+		e.dict = d.d
+		return nil
+	}
+}
+
+// WithEncoderRawDict registers raw bytes as a dictionary prefix.
+// The dictionary must be at least 8 bytes; shorter non-nil values are ignored.
+// Passing nil removes any previously configured dictionary.
+func WithEncoderRawDict(b []byte) EncoderOption {
+	return func(e *Encoder) error {
+		if b == nil {
+			e.dict = nil
+			return nil
+		}
+		if len(b) < 8 {
+			return nil
+		}
+		e.dict = &dict{content: b}
+		return nil
+	}
+}
+
+// WithContentSize declares the total uncompressed size of the stream. It is
+// written into the frame header and verified on [Writer.Close]. A negative
+// size is an error; the default, 0, marks the size as unknown.
+//
+// This applies only to the streaming [Writer]; [Encoder.AppendCompress] always
+// records the exact size. Like any option it persists across [Writer.Reset]
+// calls until changed — pass WithContentSize(0) to clear it.
+func WithContentSize(size int64) EncoderOption {
+	return func(e *Encoder) error {
+		if size < 0 {
+			return fmt.Errorf("zstd: content size %d must be >= 0", size)
+		}
+		e.contentSize = size
+		return nil
+	}
+}
+
+// newEncoder creates the appropriate encoder for the current level,
+// pulling from a pool when possible to avoid hash table allocation.
+func (e *Encoder) newEncoder() encoder {
+	maxOff := int32(e.wndSize)
+	if maxOff == 0 {
+		maxOff = 4 << 20
+	}
+	bufReset := math.MaxInt32 - maxOff*2
+	cat := encoderCategory(e.level)
+
+	if v := encoderPools[cat].Get(); v != nil {
+		enc := v.(encoder)
+		enc.configure(maxOff, bufReset, e.lowMem)
+		return enc
+	}
+
+	switch {
+	case e.level == 0:
+		en := &rawEncoder{}
+		en.configure(maxOff, bufReset, e.lowMem)
+		return en
+	case e.level <= 2:
+		en := &fastEncoder{}
+		en.configure(maxOff, bufReset, e.lowMem)
+		return en
+	case e.level <= 4:
+		en := &doubleFastEncoder{}
+		en.configure(maxOff, bufReset, e.lowMem)
+		return en
+	case e.level <= 7:
+		en := &betterFastEncoder{}
+		en.configure(maxOff, bufReset, e.lowMem)
+		return en
+	default:
+		en := &bestFastEncoder{}
+		en.configure(maxOff, bufReset, e.lowMem)
+		return en
+	}
+}
+
+// AppendCompress compresses src as a single zstd frame and appends the result to
+// dst, returning the extended buffer. It is a one-shot alternative to the
+// streaming [Writer] interface.
+//
+// The Encoder's configured level, dictionary, CRC, and window-size settings apply.
+// The returned frame is self-contained: it includes a frame header, one or more
+// blocks, and an optional checksum.
+//
+// Passing nil for dst allocates a new slice. Passing a non-nil dst (e.g. buf[:0])
+// lets the caller reuse memory. Multiple calls may be made to concatenate frames:
+//
+//	var frames []byte
+//	frames = e.AppendCompress(frames, part1)
+//	frames = e.AppendCompress(frames, part2)
+//
+// If src is nil or empty, a minimal valid frame is appended to dst.
+//
+// AppendCompress is safe for concurrent use on the same Encoder.
+func (e *Encoder) AppendCompress(dst, src []byte) []byte {
+	e.ensureInit()
+	enc := e.newEncoder()
+	defer putEncoder(enc)
+	return e.encodeAll(enc, src, dst)
+}
+
+// encodeAll compresses src into a single frame appended to dst.
+func (e *Encoder) encodeAll(enc encoder, src, dst []byte) []byte {
+	if len(src) == 0 {
+		fh := frameHeader{
+			ContentSize:   0,
+			WindowSize:    MinWindowSize,
+			SingleSegment: true,
+			Checksum:      e.crc,
+			DictID:        e.dict.ID(),
+		}
+		dst = fh.appendTo(dst)
+		var blk blockHeader
+		blk.setSize(0)
+		blk.setType(blockTypeRaw)
+		blk.setLast(true)
+		dst = blk.appendTo(dst)
+		if e.crc {
+			enc.reset(nil, true)
+			dst = enc.appendCRC(dst)
+		}
+		return dst
+	}
+
+	single := len(src) <= e.wndSize && len(src) > MinWindowSize
+	fh := frameHeader{
+		ContentSize:   uint64(len(src)),
+		WindowSize:    uint32(enc.windowSize(int64(len(src)))),
+		SingleSegment: single,
+		Checksum:      e.crc,
+		DictID:        e.dict.ID(),
+	}
+
+	if len(dst) == 0 && cap(dst) == 0 && len(src) < 1<<20 {
+		dst = make([]byte, 0, len(src))
+	}
+	dst = fh.appendTo(dst)
+
+	if raw, ok := enc.(rawBlockWriter); ok {
+		enc.reset(nil, true)
+		if e.crc {
+			_, _ = enc.checksum().Write(src)
+		}
+		for len(src) > 0 {
+			todo := src
+			if len(todo) > maxCompressedBlockSize {
+				todo = todo[:maxCompressedBlockSize]
+			}
+			src = src[len(todo):]
+			dst = raw.appendRaw(dst, todo, len(src) == 0)
+		}
+	} else if len(src) <= e.blockSize {
+		enc.reset(e.dict, true)
+		if e.crc {
+			_, _ = enc.checksum().Write(src)
+		}
+		blk := enc.block()
+		blk.last = true
+		if e.dict == nil {
+			enc.encodeNoHist(blk, src)
+		} else {
+			enc.encode(blk, src)
+		}
+
+		oldout := blk.output
+		blk.output = dst
+
+		err := blk.encode(src, false, true)
+		if err != nil {
+			panic(err)
+		}
+		dst = blk.output
+		blk.output = oldout
+	} else {
+		enc.reset(e.dict, false)
+		blk := enc.block()
+		for len(src) > 0 {
+			todo := src
+			if len(todo) > e.blockSize {
+				todo = todo[:e.blockSize]
+			}
+			src = src[len(todo):]
+			if e.crc {
+				_, _ = enc.checksum().Write(todo)
+			}
+			blk.pushOffsets()
+			enc.encode(blk, todo)
+			if len(src) == 0 {
+				blk.last = true
+			}
+			err := blk.encode(todo, false, true)
+			if err != nil {
+				panic(err)
+			}
+			dst = append(dst, blk.output...)
+			blk.reset(nil)
+		}
+	}
+	if e.crc {
+		dst = enc.appendCRC(dst)
+	}
+	return dst
+}
 
 // encoder is the internal interface shared by all compression encoders.
 type encoder interface {

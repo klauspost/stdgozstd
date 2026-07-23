@@ -16,19 +16,19 @@ func FuzzRoundTrip(f *testing.F) {
 	f.Add([]byte{0})
 	f.Add(bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add(make([]byte, 65536))
-	w := NewWriter(nil)
-	r := NewReader(bytes.NewReader(nil))
+	d := mustDecoder(f)
+	r := mustReader(f, nil)
 	var compressed []byte
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		w.Reset(nil)
-		if len(data) > 0 {
-			_ = w.SetLevel(int(data[0] % BestCompression))
-		}
 		// We disable CRC for the truncation tests to be more effective.
 		// Otherwise CRC will always be missing.
-		w.SetCRC(false)
-		compressed = w.AppendCompress(compressed[:0], data)
+		level := 3
+		if len(data) > 0 {
+			level = int(data[0] % (BestCompression + 1))
+		}
+		e := mustEncoder(t, WithEncoderLevel(level), WithEncoderCRC(false))
+		compressed = e.AppendCompress(compressed[:0], data)
 
 		_ = r.Reset(bytes.NewReader(compressed))
 		got, err := io.ReadAll(r)
@@ -39,7 +39,7 @@ func FuzzRoundTrip(f *testing.F) {
 			t.Fatalf("round-trip mismatch: got %d bytes, want %d", len(got), len(data))
 		}
 		// Test Byte interface.
-		got, err = r.AppendDecompress(got[:0], compressed)
+		got, err = d.AppendDecompress(got[:0], compressed)
 		if err != nil {
 			t.Fatalf("AppendDecompress: %v", err)
 		}
@@ -66,7 +66,7 @@ func FuzzRoundTrip(f *testing.F) {
 		if len(compressed) < 2 {
 			return
 		}
-		_, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
+		_, err = d.AppendDecompress(got[:0], compressed[:len(compressed)/2])
 		if err == nil {
 			t.Fatal("expected error from AppendDecompress due to truncated input")
 		}
@@ -81,17 +81,15 @@ func FuzzRoundTrip(f *testing.F) {
 
 func FuzzNewReader(f *testing.F) {
 	// Seed with valid compressed data.
-	w := NewWriter(nil)
-	f.Add(w.AppendCompress(nil, []byte("test")))
-	f.Add(w.AppendCompress(nil, []byte("testtesttesttesttesttesttesttest")))
-	f.Add(w.AppendCompress(nil, bytes.Repeat([]byte{0}, 100000)))
-	f.Add(w.AppendCompress(nil, []byte{}))
+	e := mustEncoder(f)
+	f.Add(e.AppendCompress(nil, []byte("test")))
+	f.Add(e.AppendCompress(nil, []byte("testtesttesttesttesttesttesttest")))
+	f.Add(e.AppendCompress(nil, bytes.Repeat([]byte{0}, 100000)))
+	f.Add(e.AppendCompress(nil, []byte{}))
 	f.Add([]byte{0x28, 0xb5, 0x2f, 0xfd}) // just magic
-	r := NewReader(nil)
 	// Cap window to prevent OOM on crafted frames.
-	if err := r.SetMaxWindowSize(1 << 20); err != nil {
-		f.Fatal(err)
-	}
+	d := mustDecoder(f, WithDecoderMaxWindow(1<<20))
+	r := mustReader(f, nil, WithDecoderMaxWindow(1<<20))
 	defer r.Close()
 	var dst []byte
 
@@ -102,7 +100,7 @@ func FuzzNewReader(f *testing.F) {
 		}
 		n, _ := io.Copy(io.Discard, io.Reader(r))
 		if n < 1<<20 {
-			dst, _ = r.AppendDecompress(dst[:0], data)
+			dst, _ = d.AppendDecompress(dst[:0], data)
 		}
 		err = r.Reset(bytes.NewReader(data))
 		if err != nil {
@@ -120,8 +118,8 @@ func FuzzStreamRoundTrip(f *testing.F) {
 	f.Add([]byte{0, 0}, []byte{})
 	f.Add([]byte{9, 5}, bytes.Repeat([]byte("abcdef"), 1000))
 	f.Add([]byte{0x85, 0xff}, make([]byte, 65536))
-	w := NewWriter(nil)
-	r := NewReader(bytes.NewReader(nil))
+	d := mustDecoder(f)
+	r := mustReader(f, nil)
 
 	f.Fuzz(func(t *testing.T, cfg, data []byte) {
 		if len(cfg) != 2 {
@@ -138,10 +136,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 		}
 
 		var buf bytes.Buffer
-		_ = w.SetLevel(level)
-		w.SetCRC(crc)
-		w.SetLowMemory(lowMem)
-		w.Reset(&buf)
+		w := mustWriter(t, &buf, WithEncoderLevel(level), WithEncoderCRC(crc), WithLowMemory(lowMem))
 		_, _ = w.Write(data[:split])
 		_ = w.Flush()
 		_, _ = w.Write(data[split:])
@@ -178,7 +173,7 @@ func FuzzStreamRoundTrip(f *testing.F) {
 		if len(compressed) < 2 {
 			return
 		}
-		_, err = r.AppendDecompress(got[:0], compressed[:len(compressed)/2])
+		_, err = d.AppendDecompress(got[:0], compressed[:len(compressed)/2])
 		if err == nil {
 			t.Fatal("expected error from AppendDecompress due to truncated input")
 		}
@@ -195,9 +190,6 @@ func FuzzDictRoundTrip(f *testing.F) {
 	f.Add([]byte{3, 10}, bytes.Repeat([]byte("the quick brown fox "), 50))
 	f.Add([]byte{0, 0}, []byte("small"))
 	f.Add([]byte{0, 0}, []byte("smallsmallsmallsmallsmall"))
-	w := NewWriter(nil)
-	r := NewReader(bytes.NewReader(nil))
-
 	f.Fuzz(func(t *testing.T, cfg, data []byte) {
 		if len(cfg) < 2 || len(data) < 2 {
 			return
@@ -211,14 +203,11 @@ func FuzzDictRoundTrip(f *testing.F) {
 		dictPart := data[:dictSplit]
 		dataPart := data[dictSplit:]
 
-		_ = w.SetLevel(level)
-		w.SetCRC(crc)
-		w.SetRawDict(dictPart)
-		compressed := w.AppendCompress(nil, dataPart)
+		e := mustEncoder(t, WithEncoderLevel(level), WithEncoderCRC(crc), WithEncoderRawDict(dictPart))
+		compressed := e.AppendCompress(nil, dataPart)
 
-		_ = r.Reset(bytes.NewReader(nil))
-		r.SetRawDict(dictPart)
-		got, err := r.AppendDecompress(nil, compressed)
+		d := mustDecoder(t, WithDecoderRawDict(dictPart))
+		got, err := d.AppendDecompress(nil, compressed)
 		if err != nil {
 			t.Fatalf("decode: %v", err)
 		}
@@ -265,19 +254,17 @@ func FuzzReaderReset(f *testing.F) {
 	f.Add(byte(3), []byte("hello reset world"))
 	f.Add(byte(0), []byte{})
 	f.Add(byte(9), bytes.Repeat([]byte("reset"), 500))
-	w := NewWriter(nil)
-	r := NewReader(bytes.NewReader(nil))
+	d := mustDecoder(f)
+	r := mustReader(f, nil)
 	var buf bytes.Buffer
 
 	f.Fuzz(func(t *testing.T, levelByte byte, data []byte) {
 		level := int(levelByte) % (BestCompression + 1)
 
-		_ = w.SetLevel(level)
-		compressed1 := w.AppendCompress(nil, data)
+		compressed1 := mustEncoder(t, WithEncoderLevel(level)).AppendCompress(nil, data)
 
 		level2 := (level + 1) % (BestCompression + 1)
-		_ = w.SetLevel(level2)
-		compressed2 := w.AppendCompress(nil, data)
+		compressed2 := mustEncoder(t, WithEncoderLevel(level2)).AppendCompress(nil, data)
 
 		_ = r.Reset(bytes.NewReader(compressed1))
 		got, err := io.ReadAll(r)
@@ -310,8 +297,7 @@ func FuzzReaderReset(f *testing.F) {
 			t.Fatal("WriteTo read mismatch")
 		}
 
-		_ = r.Reset(bytes.NewReader(nil))
-		got, err = r.AppendDecompress(nil, compressed1)
+		got, err = d.AppendDecompress(nil, compressed1)
 		if err != nil {
 			t.Fatalf("DecodeBytes after Reset: %v", err)
 		}

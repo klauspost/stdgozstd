@@ -84,6 +84,23 @@ func (e *ErrWindowSizeExceeded) Is(target error) bool {
 	return ok
 }
 
+// ErrDecodedSizeExceeded is returned when decompression would produce more
+// bytes than the limit configured with [WithDecoderMaxSize].
+type ErrDecodedSizeExceeded struct {
+	Allowed, Produced int64
+}
+
+// Error implements the error interface.
+func (e *ErrDecodedSizeExceeded) Error() string {
+	return fmt.Sprintf("decoded size exceeded (produced %d, allowed %d)", e.Produced, e.Allowed)
+}
+
+// Is reports whether target is an *ErrDecodedSizeExceeded.
+func (e *ErrDecodedSizeExceeded) Is(target error) bool {
+	_, ok := target.(*ErrDecodedSizeExceeded)
+	return ok
+}
+
 // Errors returned by the zstd encoder and decoder.
 var (
 	ErrUnknownDictionary = errors.New("unknown dictionary")

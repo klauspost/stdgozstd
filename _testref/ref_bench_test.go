@@ -30,13 +30,15 @@ func BenchmarkAppendTo(b *testing.B) {
 	for _, level := range levels {
 		for name, data := range datasets {
 			b.Run(fmt.Sprintf("lite/level-%d/%s", level, name), func(b *testing.B) {
-				w := zstd.NewWriter(nil)
-				w.SetLevel(level)
+				e, err := zstd.NewEncoder(zstd.WithEncoderLevel(level))
+				if err != nil {
+					b.Fatal(err)
+				}
 				buf := make([]byte, 0, len(data))
 				b.SetBytes(int64(len(data)))
 				b.ResetTimer()
 				for range b.N {
-					w.AppendCompress(buf[:0], data)
+					e.AppendCompress(buf[:0], data)
 				}
 			})
 			b.Run(fmt.Sprintf("ref/level-%d/%s", level, name), func(b *testing.B) {
@@ -61,8 +63,10 @@ func BenchmarkStreamEncode(b *testing.B) {
 
 	for _, level := range levels {
 		b.Run(fmt.Sprintf("lite/level-%d/medium", level), func(b *testing.B) {
-			w := zstd.NewWriter(nil)
-			w.SetLevel(level)
+			w, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(level))
+			if err != nil {
+				b.Fatal(err)
+			}
 			var buf bytes.Buffer
 			b.SetBytes(int64(len(medium)))
 			b.ResetTimer()
@@ -100,13 +104,15 @@ func BenchmarkAppendDecompress(b *testing.B) {
 			compressed := liteEncode(b, data, level)
 
 			b.Run(fmt.Sprintf("lite/level-%d/%s", level, name), func(b *testing.B) {
-				r := zstd.NewReader(bytes.NewReader([]byte{0x28, 0xb5, 0x2f, 0xfd, 0x04, 0x00, 0x01, 0x00, 0x00}))
-				defer r.Close()
+				dec, err := zstd.NewDecoder()
+				if err != nil {
+					b.Fatal(err)
+				}
 				buf := make([]byte, 0, len(data))
 				b.SetBytes(int64(len(data)))
 				b.ResetTimer()
 				for range b.N {
-					r.AppendDecompress(buf[:0], compressed)
+					dec.AppendDecompress(buf[:0], compressed)
 				}
 			})
 			b.Run(fmt.Sprintf("ref/level-%d/%s", level, name), func(b *testing.B) {
@@ -137,7 +143,10 @@ func BenchmarkStreamDecode(b *testing.B) {
 			b.SetBytes(int64(len(medium)))
 			b.ResetTimer()
 			for range b.N {
-				r := zstd.NewReader(bytes.NewReader(compressed))
+				r, err := zstd.NewReader(bytes.NewReader(compressed))
+				if err != nil {
+					b.Fatal(err)
+				}
 				io.ReadAll(r)
 				r.Close()
 			}

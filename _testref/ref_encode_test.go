@@ -26,8 +26,11 @@ func TestRefLiteAppendToLevels(t *testing.T) {
 }
 
 func TestRefLiteEncodeEmpty(t *testing.T) {
-	w := zstd.NewWriter(nil)
-	compressed := w.AppendCompress(nil, nil)
+	e, err := zstd.NewEncoder()
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := e.AppendCompress(nil, nil)
 	if len(compressed) == 0 {
 		t.Fatal("expected non-empty frame for nil input")
 	}
@@ -38,7 +41,10 @@ func TestRefLiteEncodeEmpty(t *testing.T) {
 
 	// Streaming: Write nothing, Close.
 	var buf bytes.Buffer
-	w.Reset(&buf)
+	w, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.Close()
 	if buf.Len() == 0 {
 		t.Fatal("expected non-empty frame from streaming empty close")
@@ -118,8 +124,10 @@ func TestRefLiteEncodeStream(t *testing.T) {
 	src := testData(32768)
 	for _, level := range []int{1, 3, 5, 8} {
 		var buf bytes.Buffer
-		w := zstd.NewWriter(&buf)
-		w.SetLevel(level)
+		w, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(level))
+		if err != nil {
+			t.Fatal(err)
+		}
 		w.Write(src)
 		w.Close()
 		got := refDecode(t, buf.Bytes())
@@ -132,7 +140,10 @@ func TestRefLiteEncodeStream(t *testing.T) {
 func TestRefLiteEncodeStreamMultiWrite(t *testing.T) {
 	src := testData(4096)
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
+	w, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < len(src); i += 7 {
 		end := min(i+7, len(src))
 		w.Write(src[i:end])
@@ -147,7 +158,10 @@ func TestRefLiteEncodeStreamMultiWrite(t *testing.T) {
 func TestRefLiteEncodeStreamByteByByte(t *testing.T) {
 	src := testData(512)
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
+	w, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, b := range src {
 		w.Write([]byte{b})
 	}
@@ -162,7 +176,10 @@ func TestRefLiteEncodeFlush(t *testing.T) {
 	src1 := testData(2048)
 	src2 := testData(1024)
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
+	w, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.Write(src1)
 	if err := w.Flush(); err != nil {
 		t.Fatal(err)
@@ -182,7 +199,10 @@ func TestRefLiteEncodeFlush(t *testing.T) {
 func TestRefLiteEncodeReadFrom(t *testing.T) {
 	src := testData(32768)
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
+	w, err := zstd.NewWriter(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.ReadFrom(bytes.NewReader(src))
 	w.Close()
 	got := refDecode(t, buf.Bytes())
@@ -193,9 +213,11 @@ func TestRefLiteEncodeReadFrom(t *testing.T) {
 
 func TestRefLiteEncodeCRCOn(t *testing.T) {
 	src := testData(4096)
-	w := zstd.NewWriter(nil)
-	w.SetCRC(true)
-	compressed := w.AppendCompress(nil, src)
+	e, err := zstd.NewEncoder(zstd.WithEncoderCRC(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := e.AppendCompress(nil, src)
 	got := refDecode(t, compressed)
 	if !bytes.Equal(src, got) {
 		t.Error("CRC on roundtrip mismatch")
@@ -204,9 +226,11 @@ func TestRefLiteEncodeCRCOn(t *testing.T) {
 
 func TestRefLiteEncodeCRCOff(t *testing.T) {
 	src := testData(4096)
-	w := zstd.NewWriter(nil)
-	w.SetCRC(false)
-	compressed := w.AppendCompress(nil, src)
+	e, err := zstd.NewEncoder(zstd.WithEncoderCRC(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := e.AppendCompress(nil, src)
 	got := refDecode(t, compressed, ref.IgnoreChecksum(true))
 	if !bytes.Equal(src, got) {
 		t.Error("CRC off roundtrip mismatch")
@@ -221,10 +245,7 @@ func TestRefLiteEncodeWindowSizes(t *testing.T) {
 			dataSize = 64
 		}
 		src := testData(dataSize)
-		compressed := liteEncodeOpts(t, src, func(w *zstd.Writer) {
-			w.SetLevel(3)
-			w.SetWindowSize(ws)
-		})
+		compressed := liteEncodeOpts(t, src, zstd.WithEncoderLevel(3), zstd.WithWindowSize(ws))
 		got := refDecode(t, compressed)
 		if !bytes.Equal(src, got) {
 			t.Errorf("window %d: roundtrip mismatch", ws)
@@ -235,8 +256,13 @@ func TestRefLiteEncodeWindowSizes(t *testing.T) {
 func TestRefLiteEncodeContentSize(t *testing.T) {
 	src := testData(8192)
 	var buf bytes.Buffer
-	w := zstd.NewWriter(nil)
-	w.ResetContentSize(&buf, int64(len(src)))
+	w, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Reset(&buf, zstd.WithContentSize(int64(len(src)))); err != nil {
+		t.Fatal(err)
+	}
 	w.Write(src)
 	w.Close()
 	got := refDecode(t, buf.Bytes())
@@ -247,10 +273,7 @@ func TestRefLiteEncodeContentSize(t *testing.T) {
 
 func TestRefLiteEncodeLowMem(t *testing.T) {
 	src := testData(32768)
-	compressed := liteEncodeOpts(t, src, func(w *zstd.Writer) {
-		w.SetLevel(3)
-		w.SetLowMemory(true)
-	})
+	compressed := liteEncodeOpts(t, src, zstd.WithEncoderLevel(3), zstd.WithLowMemory(true))
 	got := refDecode(t, compressed)
 	if !bytes.Equal(src, got) {
 		t.Error("lowmem roundtrip mismatch")
@@ -258,7 +281,10 @@ func TestRefLiteEncodeLowMem(t *testing.T) {
 }
 
 func TestRefLiteEncodeResetCycles(t *testing.T) {
-	w := zstd.NewWriter(nil)
+	w, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := range 10 {
 		src := testData(4096 + i*1024)
 		var buf bytes.Buffer
@@ -278,10 +304,13 @@ func TestRefLiteEncodeConcatenated(t *testing.T) {
 		testData(4096),
 		testData(1024),
 	}
-	w := zstd.NewWriter(nil)
+	e, err := zstd.NewEncoder()
+	if err != nil {
+		t.Fatal(err)
+	}
 	var concat []byte
 	for _, p := range parts {
-		concat = w.AppendCompress(concat, p)
+		concat = e.AppendCompress(concat, p)
 	}
 	want := make([]byte, 0, 2048+4096+1024)
 	for _, p := range parts {
@@ -323,8 +352,10 @@ func TestRefLiteEncodeRandom(t *testing.T) {
 func liteStreamEncode(t testing.TB, src []byte, level int) []byte {
 	t.Helper()
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
-	w.SetLevel(level)
+	w, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(level))
+	if err != nil {
+		t.Fatal(err)
+	}
 	w.Write(src)
 	if err := w.Close(); err != nil {
 		t.Fatal(err)

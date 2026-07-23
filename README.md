@@ -19,7 +19,7 @@ Browse documentation: [![Go Reference](https://pkg.go.dev/badge/github.com/klaus
 * Simplified errors.
 * Dictionary code simplified.
 * All "unsafe" removed.
-* Allows using the zero value Reader/Writer (not proposed explicitly, but seems reasonable).
+* Allows using the zero value Encoder/Decoder/Reader/Writer (not proposed explicitly, but seems reasonable).
 
 ## Additions to proposal
 
@@ -53,8 +53,61 @@ Supporting `io.WriterTo` and `io.ReaderFrom` on `Writer` and `Reader`:
 
 Bytes interface:
 
-* Added `(*Writer).AppendCompress(dst, src []byte) []byte`
-* Added `(*Reader).AppendDecompress(dst, src []byte) ([]byte, error)`
+* Added `(*Encoder).AppendCompress(dst, src []byte) []byte`
+* Added `(*Decoder).AppendDecompress(dst, src []byte) ([]byte, error)`
+
+## Configuration split: Encoder / Decoder
+
+Configuration is supplied through functional options that are shared by each
+side's constructors: the same `EncoderOption` values configure `NewEncoder`
+(one-shot) and `NewWriter` (streaming); likewise `DecoderOption` for
+`NewDecoder` and `NewReader`. The one-shot `Encoder`/`Decoder` types are
+immutable after construction; the streaming `Writer`/`Reader` can be
+reconfigured on `Reset` (see below).
+
+```go
+type Encoder struct{ /* no exported fields */ }
+type EncoderOption func(*Encoder) error
+func NewEncoder(opts ...EncoderOption) (*Encoder, error)
+func WithEncoderLevel(int) EncoderOption
+func WithWindowSize(int) EncoderOption
+func WithLowMemory(bool) EncoderOption
+func WithEncoderCRC(bool) EncoderOption
+func WithEncoderDict(*Dict) EncoderOption
+func WithEncoderRawDict([]byte) EncoderOption
+func WithContentSize(int64) EncoderOption       // streaming Writer only; declares total size
+func (*Encoder) AppendCompress(dst, src []byte) []byte
+
+type Decoder struct{ /* no exported fields */ }
+type DecoderOption func(*Decoder) error
+func NewDecoder(opts ...DecoderOption) (*Decoder, error)
+func WithDecoderMaxSize(int64) DecoderOption    // total decompressed-output cap; 0 = unlimited
+func WithDecoderMaxWindow(int) DecoderOption
+func WithDecoderDict(*Dict) DecoderOption
+func WithDecoderRawDict([]byte) DecoderOption
+func (*Decoder) AppendDecompress(dst, src []byte) ([]byte, error)
+```
+
+The streaming `Writer`/`Reader` take the same options; with no options they use
+default configuration:
+
+```go
+func NewWriter(w io.Writer, opts ...EncoderOption) (*Writer, error)
+func NewReader(r io.Reader, opts ...DecoderOption) (*Reader, error)
+func (*Writer) Reset(w io.Writer, opts ...EncoderOption) error
+func (*Reader) Reset(r io.Reader, opts ...DecoderOption) error
+```
+
+Options are applied in order, so a later option overrides an earlier one (e.g.
+`WithWindowSize` after `WithEncoderLevel`).
+
+`Reset` reuses a `Writer`/`Reader` for a new stream. With no options it swaps the
+destination/source and preserves the configuration; any options passed reconfigure
+it for the new stream and persist until changed. Every option may be changed this
+way. Reconfiguration only happens on `Reset`, never mid-stream.
+
+`WithDecoderMaxSize(n)` caps the total number of decompressed bytes as a
+decompression-bomb guard. The default, 0, disables the limit.
 
 # Pre-PR
 
