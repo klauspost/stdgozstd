@@ -7,69 +7,19 @@ package zstd
 import (
 	"fmt"
 	"io"
-	"math"
-	"sync"
 )
 
 var _ io.ReaderFrom = (*Writer)(nil)
-
-// Compression level constants. These map to the levels accepted by
-// [Writer.SetLevel].
-const (
-	DefaultCompression = -1 // level 3
-	NoCompression      = 0  // store blocks without compression
-	BestSpeed          = 1  // lowest compression, fastest speed
-	BestCompression    = 9  // highest compression, slowest speed
-)
-
-// encoderPools caches encoders by category to avoid repeated hash table allocation.
-var encoderPools [5]sync.Pool
-
-// putEncoder returns an encoder to its pool for reuse.
-func putEncoder(enc encoder) {
-	switch enc.(type) {
-	case *rawEncoder:
-		encoderPools[0].Put(enc)
-	case *fastEncoder:
-		encoderPools[1].Put(enc)
-	case *doubleFastEncoder:
-		encoderPools[2].Put(enc)
-	case *betterFastEncoder:
-		encoderPools[3].Put(enc)
-	case *bestFastEncoder:
-		encoderPools[4].Put(enc)
-	}
-}
-
-// encoderCategory maps a compression level to a pool index (0-4).
-func encoderCategory(level int) int {
-	switch {
-	case level == 0:
-		return 0
-	case level <= 2:
-		return 1
-	case level <= 4:
-		return 2
-	case level <= 7:
-		return 3
-	default:
-		return 4
-	}
-}
 
 // Writer compresses data written to it as a zstd stream.
 // Writes are buffered internally; callers must call [Writer.Close] to
 // flush any remaining data and write the frame trailer.
 type Writer struct {
+	cfg *Encoder
 	w   io.Writer
 	enc encoder
 
 	filling []byte
-
-	blockSize int
-	wndSize   int
-	level     int
-	crc       bool
 
 	headerWritten    bool
 	eofWritten       bool
@@ -78,128 +28,30 @@ type Writer struct {
 	nWritten         int64
 	nInput           int64
 	contentSize      int64
-	lowMem           bool
-
-	dict        *dict
-	initialized bool
 }
 
 // ensureInit lazily initializes the Writer on first use.
 func (w *Writer) ensureInit() {
-	if w.initialized {
-		return
+	if w.cfg == nil {
+		w.cfg = NewEncoder()
 	}
-	w.initialized = true
-	initPredefined()
-	w.level = 3
-	w.blockSize = maxCompressedBlockSize
-	w.wndSize = 4 << 20
-	w.crc = true
+	w.cfg.ensureInit()
 }
 
-// NewWriter returns a new Writer compressing data at the default level.
-// If w is nil the Writer may only be used with [Writer.AppendCompress];
-// call [Writer.Reset] before streaming.
-func NewWriter(w io.Writer) *Writer {
-	wr := &Writer{}
-	wr.ensureInit()
+// NewWriter returns a new Writer that compresses data written to w using the
+// configuration held by e. If e is nil, default configuration is used.
+// If w is nil the Writer must be pointed at a destination with [Writer.Reset]
+// before streaming.
+func NewWriter(w io.Writer, e *Encoder) *Writer {
+	if e == nil {
+		e = NewEncoder()
+	}
+	e.ensureInit()
+	wr := &Writer{cfg: e}
 	if w != nil {
 		wr.Reset(w)
 	}
 	return wr
-}
-
-// SetLevel sets the compression level. Valid values range from
-// [NoCompression] (0) to [BestCompression] (9); [DefaultCompression] (-1)
-// selects level 3. SetLevel must be called before [Writer.Reset] or
-// [Writer.Write] to take effect.
-func (w *Writer) SetLevel(level int) error {
-	w.ensureInit()
-	if level == DefaultCompression {
-		level = 3
-	}
-	if level < NoCompression || level > BestCompression {
-		return fmt.Errorf("zstd: invalid level %d", level)
-	}
-	w.level = level
-	w.blockSize = maxCompressedBlockSize
-	// These mirror zstd default window sizes at levels 1, 3 and 9.
-	switch level {
-	case 0:
-		w.wndSize = 0
-	case 1:
-		w.wndSize = 2 << 20
-	case 2:
-		w.wndSize = 3 << 20
-	case 3:
-		w.wndSize = 4 << 20
-	case 4:
-		w.wndSize = 4 << 20
-	case 5:
-		w.wndSize = 4 << 20
-	case 6:
-		w.wndSize = 5 << 20
-	case 7:
-		w.wndSize = 6 << 20
-	case 8:
-		w.wndSize = 7 << 20
-	case 9:
-		w.wndSize = 8 << 20
-	}
-	return nil
-}
-
-// SetWindowSize overrides the window size for compression.
-// This allows limiting memory usage both for compression and decompression.
-//
-// n must be in the range [MinWindowSize, MaxWindowSize].
-func (w *Writer) SetWindowSize(n int) error {
-	w.ensureInit()
-	if n < MinWindowSize || n > MaxWindowSize {
-		return fmt.Errorf("zstd: window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
-	}
-	w.wndSize = n
-	return nil
-}
-
-// SetLowMemory controls whether the encoder should trade speed for
-// lower memory usage.
-func (w *Writer) SetLowMemory(b bool) {
-	w.ensureInit()
-	w.lowMem = b
-}
-
-// SetCRC controls whether the writer appends a xxHash-64 checksum to each
-// frame. The default is true.
-func (w *Writer) SetCRC(b bool) {
-	w.ensureInit()
-	w.crc = b
-}
-
-// AddDict registers a parsed dictionary for compression.
-// Passing nil removes the previous dictionary.
-func (w *Writer) AddDict(d *Dict) {
-	w.ensureInit()
-	if d == nil {
-		w.dict = nil
-		return
-	}
-	w.dict = d.d
-}
-
-// SetRawDict registers raw bytes as a dictionary prefix.
-// The dictionary must be at least 8 bytes; shorter non-nil values are ignored.
-// Passing nil removes any previous dictionary.
-func (w *Writer) SetRawDict(b []byte) {
-	w.ensureInit()
-	if b == nil {
-		w.dict = nil
-		return
-	}
-	if len(b) < 8 {
-		return
-	}
-	w.dict = &dict{content: b}
 }
 
 // ResetContentSize resets the Writer for a new stream to wr and records
@@ -218,15 +70,15 @@ func (w *Writer) ResetContentSize(wr io.Writer, size int64) {
 func (w *Writer) Reset(wr io.Writer) {
 	w.ensureInit()
 	if cap(w.filling) == 0 {
-		w.filling = make([]byte, 0, w.blockSize)
+		w.filling = make([]byte, 0, w.cfg.blockSize)
 	}
 	w.filling = w.filling[:0]
 
 	if w.enc != nil {
 		putEncoder(w.enc)
 	}
-	w.enc = w.newEncoder()
-	w.enc.reset(w.dict, false)
+	w.enc = w.cfg.newEncoder()
+	w.enc.reset(w.cfg.dict, false)
 
 	w.w = wr
 	w.headerWritten = false
@@ -238,46 +90,6 @@ func (w *Writer) Reset(wr io.Writer) {
 	w.contentSize = 0
 }
 
-// newEncoder creates the appropriate encoder for the current level,
-// pulling from a pool when possible to avoid hash table allocation.
-func (w *Writer) newEncoder() encoder {
-	maxOff := int32(w.wndSize)
-	if maxOff == 0 {
-		maxOff = 4 << 20
-	}
-	bufReset := math.MaxInt32 - maxOff*2
-	cat := encoderCategory(w.level)
-
-	if v := encoderPools[cat].Get(); v != nil {
-		enc := v.(encoder)
-		enc.configure(maxOff, bufReset, w.lowMem)
-		return enc
-	}
-
-	switch {
-	case w.level == 0:
-		e := &rawEncoder{}
-		e.configure(maxOff, bufReset, w.lowMem)
-		return e
-	case w.level <= 2:
-		e := &fastEncoder{}
-		e.configure(maxOff, bufReset, w.lowMem)
-		return e
-	case w.level <= 4:
-		e := &doubleFastEncoder{}
-		e.configure(maxOff, bufReset, w.lowMem)
-		return e
-	case w.level <= 7:
-		e := &betterFastEncoder{}
-		e.configure(maxOff, bufReset, w.lowMem)
-		return e
-	default:
-		e := &bestFastEncoder{}
-		e.configure(maxOff, bufReset, w.lowMem)
-		return e
-	}
-}
-
 // Write compresses p and writes it to the underlying writer.
 // The compressed bytes are not necessarily flushed until [Writer.Close]
 // or [Writer.Flush] is called.
@@ -287,24 +99,24 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 		return 0, ErrEncoderClosed
 	}
 	for len(p) > 0 {
-		if len(p)+len(w.filling) < w.blockSize {
-			if w.crc {
+		if len(p)+len(w.filling) < w.cfg.blockSize {
+			if w.cfg.crc {
 				_, _ = w.enc.checksum().Write(p)
 			}
 			w.filling = append(w.filling, p...)
 			return n + len(p), nil
 		}
 		add := p
-		if len(p)+len(w.filling) > w.blockSize {
-			add = add[:w.blockSize-len(w.filling)]
+		if len(p)+len(w.filling) > w.cfg.blockSize {
+			add = add[:w.cfg.blockSize-len(w.filling)]
 		}
-		if w.crc {
+		if w.cfg.crc {
 			_, _ = w.enc.checksum().Write(add)
 		}
 		w.filling = append(w.filling, add...)
 		p = p[len(add):]
 		n += len(add)
-		if len(w.filling) < w.blockSize {
+		if len(w.filling) < w.cfg.blockSize {
 			return n, nil
 		}
 		if err := w.nextBlock(false); err != nil {
@@ -323,11 +135,11 @@ func (w *Writer) ReadFrom(r io.Reader) (n int64, err error) {
 			return 0, err
 		}
 	}
-	w.filling = w.filling[:w.blockSize]
+	w.filling = w.filling[:w.cfg.blockSize]
 	src := w.filling
 	for {
 		n2, err := r.Read(src)
-		if w.crc {
+		if w.cfg.crc {
 			_, _ = w.enc.checksum().Write(src[:n2])
 		}
 		src = src[n2:]
@@ -347,7 +159,7 @@ func (w *Writer) ReadFrom(r io.Reader) (n int64, err error) {
 		if err = w.nextBlock(false); err != nil {
 			return n, err
 		}
-		w.filling = w.filling[:w.blockSize]
+		w.filling = w.filling[:w.cfg.blockSize]
 		src = w.filling
 	}
 }
@@ -392,7 +204,7 @@ func (w *Writer) Close() error {
 		return w.err
 	}
 
-	if w.crc {
+	if w.cfg.crc {
 		var tmp [4]byte
 		_, w.err = w.w.Write(w.enc.appendCRC(tmp[:0]))
 		w.nWritten += 4
@@ -404,44 +216,18 @@ func (w *Writer) Close() error {
 	return w.err
 }
 
-// AppendCompress compresses src as a single zstd frame and appends the result to dst,
-// returning the extended buffer. It is a one-shot alternative to the streaming
-// Write/Close interface.
-//
-// The Writer's current level, dictionary, CRC, and window-size settings apply.
-// The returned frame is self-contained: it includes a frame header, one or more
-// blocks, and an optional checksum.
-//
-// Passing nil for dst allocates a new slice. Passing a non-nil dst (e.g. buf[:0])
-// lets the caller reuse memory. Multiple calls may be made to concatenate frames:
-//
-//	var frames []byte
-//	frames = w.AppendCompress(part1, frames)
-//	frames = w.AppendCompress(part2, frames)
-//
-// If src is nil or empty, a minimal valid frame is appended to dst.
-//
-// AppendCompress is safe for concurrent use on the same Writer,
-// provided configuration methods are not called concurrently.
-func (w *Writer) AppendCompress(dst, src []byte) []byte {
-	w.ensureInit()
-	enc := w.newEncoder()
-	defer putEncoder(enc)
-	return w.encodeAll(enc, src, dst)
-}
-
 // nextBlock encodes the current filling buffer as a block.
 func (w *Writer) nextBlock(final bool) error {
 	if w.err != nil {
 		return w.err
 	}
-	if len(w.filling) > w.blockSize {
+	if len(w.filling) > w.cfg.blockSize {
 		return fmt.Errorf("block > maxStoreBlockSize")
 	}
 	if !w.headerWritten {
 		if final {
 			var current []byte
-			current = w.encodeAll(w.enc, w.filling, current)
+			current = w.cfg.encodeAll(w.enc, w.filling, current)
 			var n2 int
 			n2, w.err = w.w.Write(current)
 			if w.err != nil {
@@ -461,8 +247,8 @@ func (w *Writer) nextBlock(final bool) error {
 			ContentSize:   uint64(w.contentSize),
 			WindowSize:    uint32(w.enc.windowSize(w.contentSize)),
 			SingleSegment: false,
-			Checksum:      w.crc,
-			DictID:        w.dict.ID(),
+			Checksum:      w.cfg.crc,
+			DictID:        w.cfg.dict.ID(),
 		}
 		dst := fh.appendTo(tmp[:0])
 		w.headerWritten = true
@@ -528,107 +314,4 @@ func (w *Writer) nextBlock(final bool) error {
 	w.nWritten += int64(len(blk.output))
 	w.filling = w.filling[:0]
 	return w.err
-}
-
-// encodeAll compresses src into a single frame appended to dst.
-func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
-	if len(src) == 0 {
-		fh := frameHeader{
-			ContentSize:   0,
-			WindowSize:    MinWindowSize,
-			SingleSegment: true,
-			Checksum:      w.crc,
-			DictID:        w.dict.ID(),
-		}
-		dst = fh.appendTo(dst)
-		var blk blockHeader
-		blk.setSize(0)
-		blk.setType(blockTypeRaw)
-		blk.setLast(true)
-		dst = blk.appendTo(dst)
-		if w.crc {
-			enc.reset(nil, true)
-			dst = enc.appendCRC(dst)
-		}
-		return dst
-	}
-
-	single := len(src) <= w.wndSize && len(src) > MinWindowSize
-	fh := frameHeader{
-		ContentSize:   uint64(len(src)),
-		WindowSize:    uint32(enc.windowSize(int64(len(src)))),
-		SingleSegment: single,
-		Checksum:      w.crc,
-		DictID:        w.dict.ID(),
-	}
-
-	if len(dst) == 0 && cap(dst) == 0 && len(src) < 1<<20 {
-		dst = make([]byte, 0, len(src))
-	}
-	dst = fh.appendTo(dst)
-
-	if raw, ok := enc.(rawBlockWriter); ok {
-		enc.reset(nil, true)
-		if w.crc {
-			_, _ = enc.checksum().Write(src)
-		}
-		for len(src) > 0 {
-			todo := src
-			if len(todo) > maxCompressedBlockSize {
-				todo = todo[:maxCompressedBlockSize]
-			}
-			src = src[len(todo):]
-			dst = raw.appendRaw(dst, todo, len(src) == 0)
-		}
-	} else if len(src) <= w.blockSize {
-		enc.reset(w.dict, true)
-		if w.crc {
-			_, _ = enc.checksum().Write(src)
-		}
-		blk := enc.block()
-		blk.last = true
-		if w.dict == nil {
-			enc.encodeNoHist(blk, src)
-		} else {
-			enc.encode(blk, src)
-		}
-
-		oldout := blk.output
-		blk.output = dst
-
-		err := blk.encode(src, false, true)
-		if err != nil {
-			panic(err)
-		}
-		dst = blk.output
-		blk.output = oldout
-	} else {
-		enc.reset(w.dict, false)
-		blk := enc.block()
-		for len(src) > 0 {
-			todo := src
-			if len(todo) > w.blockSize {
-				todo = todo[:w.blockSize]
-			}
-			src = src[len(todo):]
-			if w.crc {
-				_, _ = enc.checksum().Write(todo)
-			}
-			blk.pushOffsets()
-			enc.encode(blk, todo)
-			if len(src) == 0 {
-				blk.last = true
-			}
-			err := blk.encode(todo, false, true)
-			if err != nil {
-				panic(err)
-			}
-			dst = append(dst, blk.output...)
-			blk.reset(nil)
-		}
-	}
-	if w.crc {
-		dst = enc.appendCRC(dst)
-	}
-	return dst
 }

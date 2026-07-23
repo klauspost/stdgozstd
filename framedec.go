@@ -7,14 +7,20 @@ package zstd
 import (
 	"encoding/binary"
 	"io"
+	"math"
+	"sync"
 
 	"github.com/klauspost/stdgozstd/internal/xxhash"
 )
 
+// frameDecPool holds frame decoders for reuse.
+var frameDecPool sync.Pool
+
 // decoderOptions holds configuration for the frame decoder.
 type decoderOptions struct {
-	maxWindowSize int
-	lowMem        bool
+	maxWindowSize  int
+	maxDecodedSize int64 // 0 = unlimited
+	lowMem         bool
 }
 
 // Limits for the decoder window size, as defined by the zstd specification.
@@ -166,6 +172,13 @@ func (d *frameDec) reset(br byteBuffer) error {
 		}
 	}
 
+	// Reject a frame whose declared content size alone exceeds the limit,
+	// before allocating buffers or decoding any block.
+	if d.o.maxDecodedSize > 0 && d.FrameContentSize != fcsUnknown && d.FrameContentSize > uint64(d.o.maxDecodedSize) {
+		// Clamp to avoid int64 overflow when FrameContentSize exceeds MaxInt64.
+		return &ErrDecodedSizeExceeded{Allowed: d.o.maxDecodedSize, Produced: int64(min(d.FrameContentSize, math.MaxInt64))}
+	}
+
 	d.HasCheckSum = fhd&(1<<2) != 0
 	if d.HasCheckSum {
 		if d.crc == nil {
@@ -224,7 +237,11 @@ const maxDirectDecodeSize = 1 << 20 // 1 MiB
 
 // runDecoder decodes all blocks into dst (used for DecodeAll-style calls).
 // Falls back to streaming if content exceeds maxDirectDecodeSize.
-func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
+//
+// maxTotal (when > 0) caps the cumulative output measured from dstStart, the
+// length of dst at the start of the enclosing decode call; this bounds output
+// across concatenated frames even when a frame's content size is absent or lies.
+func (d *frameDec) runDecoder(dst []byte, dec *blockDec, maxTotal int64, dstStart int) ([]byte, error) {
 	saved := d.history.b
 
 	d.history.b = dst
@@ -248,6 +265,10 @@ func (d *frameDec) runDecoder(dst []byte, dec *blockDec) ([]byte, error) {
 		}
 		err = dec.decodeBuf(&d.history)
 		if err != nil {
+			break
+		}
+		if maxTotal > 0 && int64(len(d.history.b)-dstStart) > maxTotal {
+			err = &ErrDecodedSizeExceeded{Allowed: maxTotal, Produced: int64(len(d.history.b) - dstStart)}
 			break
 		}
 		if dec.Last {

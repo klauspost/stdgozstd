@@ -13,7 +13,7 @@ import (
 
 func Example_writerReader() {
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
+	w := zstd.NewWriter(&buf, nil)
 	_, err := w.Write([]byte("Hello, zstd!"))
 	if err != nil {
 		log.Fatal(err)
@@ -22,7 +22,7 @@ func Example_writerReader() {
 		log.Fatal(err)
 	}
 
-	r := zstd.NewReader(&buf)
+	r := zstd.NewReader(&buf, nil)
 	if _, err := io.Copy(os.Stdout, r); err != nil {
 		log.Fatal(err)
 	}
@@ -31,15 +31,14 @@ func Example_writerReader() {
 	// Hello, zstd!
 }
 
-func ExampleWriter_AppendCompress() {
+func ExampleEncoder_AppendCompress() {
 	src := []byte("One-shot compression is the simplest API.")
 
-	w := zstd.NewWriter(nil)
-	compressed := w.AppendCompress(nil, src)
+	e := zstd.NewEncoder()
+	compressed := e.AppendCompress(nil, src)
 
-	r := zstd.NewReader(bytes.NewReader(nil))
-	defer r.Close()
-	decompressed, err := r.AppendDecompress(nil, compressed)
+	d := zstd.NewDecoder()
+	decompressed, err := d.AppendDecompress(nil, compressed)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -48,17 +47,16 @@ func ExampleWriter_AppendCompress() {
 	// One-shot compression is the simplest API.
 }
 
-func ExampleReader_AppendDecompress() {
+func ExampleDecoder_AppendDecompress() {
 	src := []byte("appended to existing buffer")
 
-	w := zstd.NewWriter(nil)
-	compressed := w.AppendCompress(nil, src)
+	e := zstd.NewEncoder()
+	compressed := e.AppendCompress(nil, src)
 
-	r := zstd.NewReader(bytes.NewReader(nil))
-	defer r.Close()
+	d := zstd.NewDecoder()
 
 	prefix := []byte("data: ")
-	result, err := r.AppendDecompress(prefix, compressed)
+	result, err := d.AppendDecompress(prefix, compressed)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,31 +65,30 @@ func ExampleReader_AppendDecompress() {
 	// data: appended to existing buffer
 }
 
-func ExampleWriter_SetLevel() {
+func ExampleEncoder_SetLevel() {
 	data := []byte(strings.Repeat("the quick brown fox jumps over the lazy dog. ", 100))
 
 	compress := func(level int) []byte {
-		w := zstd.NewWriter(nil)
-		if err := w.SetLevel(level); err != nil {
+		e := zstd.NewEncoder()
+		if err := e.SetLevel(level); err != nil {
 			log.Fatal(err)
 		}
-		return w.AppendCompress(nil, data)
+		return e.AppendCompress(nil, data)
 	}
 
 	fast := compress(zstd.BestSpeed)
 	best := compress(zstd.BestCompression)
 
-	r := zstd.NewReader(bytes.NewReader(nil))
-	defer r.Close()
+	d := zstd.NewDecoder()
 
-	dec, err := r.AppendDecompress(nil, fast)
-	if err != nil || string(dec) != string(data) {
+	got, err := d.AppendDecompress(nil, fast)
+	if err != nil || string(got) != string(data) {
 		log.Fatal("BestSpeed mismatch")
 	}
 	fmt.Println("BestSpeed: OK")
 
-	dec, err = r.AppendDecompress(nil, best)
-	if err != nil || string(dec) != string(data) {
+	got, err = d.AppendDecompress(nil, best)
+	if err != nil || string(got) != string(data) {
 		log.Fatal("BestCompression mismatch")
 	}
 	fmt.Println("BestCompression: OK")
@@ -111,8 +108,8 @@ func Example_reset() {
 	}
 
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
-	r := zstd.NewReader(&buf)
+	w := zstd.NewWriter(&buf, nil)
+	r := zstd.NewReader(&buf, nil)
 
 	for _, p := range proverbs {
 		buf.Reset()
@@ -143,7 +140,7 @@ func Example_reset() {
 
 func ExampleWriter_Flush() {
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
+	w := zstd.NewWriter(&buf, nil)
 
 	if _, err := w.Write([]byte("first part.")); err != nil {
 		log.Fatal(err)
@@ -159,7 +156,7 @@ func ExampleWriter_Flush() {
 		log.Fatal(err)
 	}
 
-	r := zstd.NewReader(&buf)
+	r := zstd.NewReader(&buf, nil)
 	defer r.Close()
 	if _, err := io.Copy(os.Stdout, r); err != nil {
 		log.Fatal(err)
@@ -171,7 +168,7 @@ func ExampleWriter_Flush() {
 func ExampleWriter_ReadFrom() {
 	input := strings.NewReader("ReadFrom compresses data from an io.Reader efficiently.")
 	var buf bytes.Buffer
-	w := zstd.NewWriter(&buf)
+	w := zstd.NewWriter(&buf, nil)
 
 	if _, err := w.ReadFrom(input); err != nil {
 		log.Fatal(err)
@@ -180,7 +177,7 @@ func ExampleWriter_ReadFrom() {
 		log.Fatal(err)
 	}
 
-	r := zstd.NewReader(&buf)
+	r := zstd.NewReader(&buf, nil)
 	defer r.Close()
 	if _, err := io.Copy(os.Stdout, r); err != nil {
 		log.Fatal(err)
@@ -189,33 +186,32 @@ func ExampleWriter_ReadFrom() {
 	// ReadFrom compresses data from an io.Reader efficiently.
 }
 
-func ExampleWriter_SetRawDict() {
+func ExampleEncoder_SetRawDict() {
 	dict := []byte("the quick brown fox jumps over the lazy dog")
 	data := []byte("the quick brown fox leaps over the sleepy dog")
 
 	compressWithDict := func(d []byte) []byte {
-		w := zstd.NewWriter(nil)
+		enc := zstd.NewEncoder()
 		if d != nil {
-			w.SetRawDict(d)
+			enc.SetRawDict(d)
 		}
-		return w.AppendCompress(nil, data)
+		return enc.AppendCompress(nil, data)
 	}
 
 	without := compressWithDict(nil)
 	with := compressWithDict(dict)
 
-	r := zstd.NewReader(bytes.NewReader(nil))
-	defer r.Close()
+	dec := zstd.NewDecoder()
 
-	dec, err := r.AppendDecompress(nil, without)
-	if err != nil || string(dec) != string(data) {
+	got, err := dec.AppendDecompress(nil, without)
+	if err != nil || string(got) != string(data) {
 		log.Fatal("without dict mismatch")
 	}
 	fmt.Println("without dict: OK")
 
-	r.SetRawDict(dict)
-	dec, err = r.AppendDecompress(nil, with)
-	if err != nil || string(dec) != string(data) {
+	dec.SetRawDict(dict)
+	got, err = dec.AppendDecompress(nil, with)
+	if err != nil || string(got) != string(data) {
 		log.Fatal("with dict mismatch")
 	}
 	fmt.Println("with dict: OK")
