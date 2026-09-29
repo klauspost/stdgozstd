@@ -232,6 +232,30 @@ func TestRefLiteEncodeWindowSizes(t *testing.T) {
 	}
 }
 
+// TestRefLiteEncodeSmallWindows checks that ref accepts frames whose window is
+// smaller than the input and the 128 KiB block size.
+func TestRefLiteEncodeSmallWindows(t *testing.T) {
+	src := append(testData(128<<10), bytes.Repeat(testData(32<<10), 8)...)
+	for level := 0; level <= 9; level++ {
+		for ws := zstd.MinWindowSize; ws <= 2*maxCompressedBlockSize; ws *= 2 {
+			w := zstd.NewWriter(nil)
+			w.SetLevel(level)
+			w.SetWindowSize(ws)
+			var buf bytes.Buffer
+			w.Reset(&buf)
+			w.Write(src)
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			for name, frame := range map[string][]byte{"append": w.AppendCompress(nil, src), "write": buf.Bytes()} {
+				if got := refDecode(t, frame); !bytes.Equal(src, got) {
+					t.Errorf("level %d window %d %s: roundtrip mismatch", level, ws, name)
+				}
+			}
+		}
+	}
+}
+
 func TestRefLiteEncodeContentSize(t *testing.T) {
 	src := testData(8192)
 	var buf bytes.Buffer

@@ -159,6 +159,8 @@ func (w *Writer) SetWindowSize(n int) error {
 		return fmt.Errorf("zstd: window size %d out of range [%d, %d]", n, MinWindowSize, MaxWindowSize)
 	}
 	w.wndSize = n
+	// RFC 8878 limits blocks to min(window, 128 KiB).
+	w.blockSize = min(n, maxCompressedBlockSize)
 	return nil
 }
 
@@ -217,7 +219,7 @@ func (w *Writer) ResetContentSize(wr io.Writer, size int64) {
 // to wr. Configuration is preserved.
 func (w *Writer) Reset(wr io.Writer) {
 	w.ensureInit()
-	if cap(w.filling) == 0 {
+	if cap(w.filling) < w.blockSize {
 		w.filling = make([]byte, 0, w.blockSize)
 	}
 	w.filling = w.filling[:0]
@@ -574,8 +576,8 @@ func (w *Writer) encodeAll(enc encoder, src, dst []byte) []byte {
 		}
 		for len(src) > 0 {
 			todo := src
-			if len(todo) > maxCompressedBlockSize {
-				todo = todo[:maxCompressedBlockSize]
+			if len(todo) > w.blockSize {
+				todo = todo[:w.blockSize]
 			}
 			src = src[len(todo):]
 			dst = raw.appendRaw(dst, todo, len(src) == 0)

@@ -815,6 +815,53 @@ func TestSetWindowSizeRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSmallWindowRoundTrip checks that blocks never exceed windows below
+// 128 KiB. One Writer is reused across growing windows so a filling buffer
+// sized for a smaller window must be regrown.
+func TestSmallWindowRoundTrip(t *testing.T) {
+	src := append(genJSON(128<<10, 1), bytes.Repeat(randTestBytes(32<<10, 2), 8)...)
+	for level := NoCompression; level <= BestCompression; level++ {
+		w := NewWriter(nil)
+		for wnd := MinWindowSize; wnd <= 2*maxCompressedBlockSize; wnd *= 2 {
+			if err := w.SetLevel(level); err != nil {
+				t.Fatal(err)
+			}
+			if err := w.SetWindowSize(wnd); err != nil {
+				t.Fatal(err)
+			}
+			frames := map[string][]byte{"append": w.AppendCompress(nil, src)}
+			// readfrom first: Write grows filling via append, masking a short buffer.
+			for _, name := range []string{"readfrom", "write"} {
+				var buf bytes.Buffer
+				w.Reset(&buf)
+				var err error
+				if name == "write" {
+					_, err = w.Write(src)
+				} else {
+					_, err = w.ReadFrom(bytes.NewReader(src))
+				}
+				if err != nil {
+					t.Fatalf("level %d window %d %s: %v", level, wnd, name, err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatalf("level %d window %d %s close: %v", level, wnd, name, err)
+				}
+				frames[name] = buf.Bytes()
+			}
+			for name, frame := range frames {
+				var r Reader
+				got, err := r.AppendDecompress(nil, frame)
+				if err != nil {
+					t.Fatalf("level %d window %d %s: %v", level, wnd, name, err)
+				}
+				if !bytes.Equal(got, src) {
+					t.Fatalf("level %d window %d %s: mismatch", level, wnd, name)
+				}
+			}
+		}
+	}
+}
+
 func TestResetContentSize(t *testing.T) {
 	src := []byte("content size test data, exactly this long")
 	var buf bytes.Buffer
